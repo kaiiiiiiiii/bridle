@@ -1,5 +1,5 @@
-//! TUI command implementation.
+use crate::error::Error;
 
-pub fn run_tui() {
-    // TODO: Implement TUI
+pub fn run_tui() -> Result<(), Error> {
+    crate::tui::run()
 }

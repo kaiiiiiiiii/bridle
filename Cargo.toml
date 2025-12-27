@@ -20,3 +20,7 @@ color-eyre = "0.6"
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"

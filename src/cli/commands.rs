@@ -40,6 +40,9 @@ pub enum ProfileCommands {
         harness: String,
         /// Profile name.
         name: String,
+        /// Copy current harness config to the new profile.
+        #[arg(long)]
+        from_current: bool,
     },
 
     /// Delete a profile.
@@ -56,5 +59,23 @@ pub enum ProfileCommands {
         harness: String,
         /// Profile name.
         name: String,
+    },
+
+    /// Edit a profile with $EDITOR.
+    Edit {
+        /// Harness name.
+        harness: String,
+        /// Profile name.
+        name: String,
+    },
+
+    /// Compare two profiles or profile vs current config.
+    Diff {
+        /// Harness name.
+        harness: String,
+        /// First profile name.
+        name: String,
+        /// Second profile name (optional, defaults to current config).
+        other: Option<String>,
     },
 }

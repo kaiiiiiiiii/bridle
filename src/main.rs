@@ -26,8 +26,16 @@ fn main() -> color_eyre::Result<()> {
         Commands::Profile(profile_cmd) => match profile_cmd {
             ProfileCommands::List { harness } => cli::profile::list_profiles(&harness),
             ProfileCommands::Show { harness, name } => cli::profile::show_profile(&harness, &name),
-            ProfileCommands::Create { harness, name } => {
-                cli::profile::create_profile(&harness, &name)
+            ProfileCommands::Create {
+                harness,
+                name,
+                from_current,
+            } => {
+                if from_current {
+                    cli::profile::create_profile_from_current(&harness, &name)
+                } else {
+                    cli::profile::create_profile(&harness, &name)
+                }
             }
             ProfileCommands::Delete { harness, name } => {
                 cli::profile::delete_profile(&harness, &name)
@@ -35,8 +43,14 @@ fn main() -> color_eyre::Result<()> {
             ProfileCommands::Switch { harness, name } => {
                 cli::profile::switch_profile(&harness, &name)
             }
+            ProfileCommands::Edit { harness, name } => cli::profile::edit_profile(&harness, &name),
+            ProfileCommands::Diff {
+                harness,
+                name,
+                other,
+            } => cli::profile::diff_profiles(&harness, &name, other.as_deref()),
         },
-        Commands::Tui => cli::tui::run_tui(),
+        Commands::Tui => cli::tui::run_tui()?,
     }
 
     Ok(())

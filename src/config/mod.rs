@@ -8,5 +8,5 @@ mod manager;
 mod profile_name;
 
 pub use bridle::BridleConfig;
-pub use manager::ProfileManager;
+pub use manager::{ProfileInfo, ProfileManager};
 pub use profile_name::{InvalidProfileName, ProfileName};
