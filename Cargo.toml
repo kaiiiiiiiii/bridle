@@ -19,5 +19,4 @@ thiserror = "2.0"
 color-eyre = "0.6"
 
 # Utilities
-dirs = "5.0"
 chrono = { version = "0.4", features = ["serde"] }
