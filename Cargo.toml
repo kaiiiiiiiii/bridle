@@ -5,3 +5,19 @@ edition = "2024"
 
 [dependencies]
 get-harness = { path = "../get-harness" }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+color-eyre = "0.6"
+
+# Utilities
+dirs = "5.0"
+chrono = { version = "0.4", features = ["serde"] }

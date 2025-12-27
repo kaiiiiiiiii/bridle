@@ -1,5 +1,31 @@
-use get_harness::Harness;
+mod cli;
+mod config;
+mod error;
+mod harness;
+mod tui;
 
-fn main() {
-    println!("Hello, world!");
+use clap::Parser;
+use cli::Commands;
+
+#[derive(Parser)]
+#[command(name = "bridle")]
+#[command(version, about = "Unified AI harness configuration manager")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+fn main() -> color_eyre::Result<()> {
+    color_eyre::install()?;
+
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Status => cli::status::display_status(),
+        Commands::List => cli::profile::list_profiles(),
+        Commands::Show { name } => cli::profile::show_profile(&name),
+        Commands::Apply { name } => cli::profile::apply_profile(&name),
+    }
+
+    Ok(())
 }

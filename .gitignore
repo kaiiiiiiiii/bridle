@@ -4,3 +4,7 @@ AGENTIC_WORKFLOW.md
 AGENTS.md
 HARNESS_SPEC.md
 outline.md
+
+# bv (beads viewer) local config and caches
+.bv/
+.beads/artifacts/
