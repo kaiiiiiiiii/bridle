@@ -3,6 +3,7 @@
 use get_harness::{Harness, HarnessKind};
 
 use crate::config::{BridleConfig, ProfileManager, ProfileName};
+use crate::harness::HarnessConfig;
 
 fn resolve_harness(name: &str) -> Option<Harness> {
     let kind = match name {
@@ -34,12 +35,9 @@ pub fn list_profiles(harness_name: &str) {
     match manager.list_profiles(&harness) {
         Ok(profiles) => {
             if profiles.is_empty() {
-                println!(
-                    "No profiles found for {}",
-                    ProfileManager::harness_id(&harness)
-                );
+                println!("No profiles found for {}", harness.id());
             } else {
-                println!("Profiles for {}:", ProfileManager::harness_id(&harness));
+                println!("Profiles for {}:", harness.id());
                 for profile in profiles {
                     println!("  {}", profile.as_str());
                 }
@@ -268,7 +266,7 @@ pub fn switch_profile(harness_name: &str, profile_name: &str) {
         return;
     }
 
-    let harness_id = ProfileManager::harness_id(&harness);
+    let harness_id = harness.id();
 
     match manager.backup_current(&harness) {
         Ok(backup_path) => {

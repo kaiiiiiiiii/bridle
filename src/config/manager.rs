@@ -1,14 +1,14 @@
 //! Profile management.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::Local;
-use get_harness::{Harness, InstallationStatus, McpServer, Scope};
+use get_harness::InstallationStatus;
 
 use super::BridleConfig;
 use super::profile_name::ProfileName;
 use crate::error::{Error, Result};
+use crate::harness::HarnessConfig;
 
 /// Information about a profile for display purposes.
 #[derive(Debug, Clone)]
@@ -39,27 +39,16 @@ impl ProfileManager {
         &self.profiles_dir
     }
 
-    pub fn harness_id(harness: &Harness) -> &'static str {
-        match harness.kind() {
-            get_harness::HarnessKind::ClaudeCode => "claude-code",
-            get_harness::HarnessKind::OpenCode => "opencode",
-            get_harness::HarnessKind::Goose => "goose",
-            _ => "unknown",
-        }
+    pub fn profile_path(&self, harness: &dyn HarnessConfig, name: &ProfileName) -> PathBuf {
+        self.profiles_dir.join(harness.id()).join(name.as_str())
     }
 
-    pub fn profile_path(&self, harness: &Harness, name: &ProfileName) -> PathBuf {
-        self.profiles_dir
-            .join(Self::harness_id(harness))
-            .join(name.as_str())
-    }
-
-    pub fn profile_exists(&self, harness: &Harness, name: &ProfileName) -> bool {
+    pub fn profile_exists(&self, harness: &dyn HarnessConfig, name: &ProfileName) -> bool {
         self.profile_path(harness, name).is_dir()
     }
 
-    pub fn list_profiles(&self, harness: &Harness) -> Result<Vec<ProfileName>> {
-        let harness_dir = self.profiles_dir.join(Self::harness_id(harness));
+    pub fn list_profiles(&self, harness: &dyn HarnessConfig) -> Result<Vec<ProfileName>> {
+        let harness_dir = self.profiles_dir.join(harness.id());
 
         if !harness_dir.exists() {
             return Ok(Vec::new());
@@ -80,7 +69,11 @@ impl ProfileManager {
         Ok(profiles)
     }
 
-    pub fn create_profile(&self, harness: &Harness, name: &ProfileName) -> Result<PathBuf> {
+    pub fn create_profile(
+        &self,
+        harness: &dyn HarnessConfig,
+        name: &ProfileName,
+    ) -> Result<PathBuf> {
         let path = self.profile_path(harness, name);
 
         if path.exists() {
@@ -91,9 +84,13 @@ impl ProfileManager {
         Ok(path)
     }
 
-    pub fn create_from_current(&self, harness: &Harness, name: &ProfileName) -> Result<PathBuf> {
+    pub fn create_from_current(
+        &self,
+        harness: &dyn HarnessConfig,
+        name: &ProfileName,
+    ) -> Result<PathBuf> {
         let profile_path = self.create_profile(harness, name)?;
-        let source_dir = harness.config(&Scope::Global)?;
+        let source_dir = harness.config_dir()?;
 
         if !source_dir.exists() {
             return Ok(profile_path);
@@ -116,7 +113,7 @@ impl ProfileManager {
     /// or if the harness is not fully installed.
     ///
     /// Only creates for `FullyInstalled` harnesses (both binary and config exist).
-    pub fn create_from_current_if_missing(&self, harness: &Harness) -> Result<bool> {
+    pub fn create_from_current_if_missing(&self, harness: &dyn HarnessConfig) -> Result<bool> {
         let status = harness.installation_status()?;
         if !matches!(status, InstallationStatus::FullyInstalled { .. }) {
             return Ok(false);
@@ -131,7 +128,7 @@ impl ProfileManager {
         Ok(true)
     }
 
-    pub fn delete_profile(&self, harness: &Harness, name: &ProfileName) -> Result<()> {
+    pub fn delete_profile(&self, harness: &dyn HarnessConfig, name: &ProfileName) -> Result<()> {
         let path = self.profile_path(harness, name);
 
         if !path.exists() {
@@ -142,14 +139,18 @@ impl ProfileManager {
         Ok(())
     }
 
-    pub fn show_profile(&self, harness: &Harness, name: &ProfileName) -> Result<ProfileInfo> {
+    pub fn show_profile(
+        &self,
+        harness: &dyn HarnessConfig,
+        name: &ProfileName,
+    ) -> Result<ProfileInfo> {
         let path = self.profile_path(harness, name);
 
         if !path.exists() {
             return Err(Error::ProfileNotFound(name.as_str().to_string()));
         }
 
-        let harness_id = Self::harness_id(harness).to_string();
+        let harness_id = harness.id().to_string();
         let is_active = BridleConfig::load()
             .map(|c| c.active_profile_for(&harness_id) == Some(name.as_str()))
             .unwrap_or(false);
@@ -167,18 +168,13 @@ impl ProfileManager {
 
     fn extract_mcp_servers(
         &self,
-        harness: &Harness,
+        harness: &dyn HarnessConfig,
         profile_path: &std::path::Path,
     ) -> Result<Vec<String>> {
-        let mcp_resource = match harness.mcp(&Scope::Global)? {
-            Some(r) => r,
+        let mcp_filename = match harness.mcp_filename() {
+            Some(f) => f,
             None => return Ok(Vec::new()),
         };
-        let mcp_filename = mcp_resource
-            .file
-            .file_name()
-            .and_then(|n: &std::ffi::OsStr| n.to_str())
-            .unwrap_or("config.json");
 
         let profile_mcp_path = profile_path.join(mcp_filename);
 
@@ -187,16 +183,7 @@ impl ProfileManager {
         }
 
         let content = std::fs::read_to_string(&profile_mcp_path)?;
-        let servers = self.parse_mcp_server_names(harness, &content)?;
-        Ok(servers)
-    }
-
-    fn parse_mcp_server_names(&self, harness: &Harness, content: &str) -> Result<Vec<String>> {
-        let parsed: serde_json::Value = serde_json::from_str(content)?;
-        let servers: HashMap<String, McpServer> = harness.parse_mcp_config(&parsed)?;
-        let mut names: Vec<String> = servers.keys().cloned().collect();
-        names.sort();
-        Ok(names)
+        harness.parse_mcp_servers(&content)
     }
 
     pub fn backups_dir(&self) -> PathBuf {
@@ -207,21 +194,18 @@ impl ProfileManager {
             .join("backups")
     }
 
-    pub fn backup_current(&self, harness: &Harness) -> Result<PathBuf> {
-        let source_dir = harness.config(&Scope::Global)?;
+    pub fn backup_current(&self, harness: &dyn HarnessConfig) -> Result<PathBuf> {
+        let source_dir = harness.config_dir()?;
 
         if !source_dir.exists() {
             return Err(Error::NoConfigFound(format!(
                 "No config found for {}",
-                Self::harness_id(harness)
+                harness.id()
             )));
         }
 
         let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
-        let backup_path = self
-            .backups_dir()
-            .join(Self::harness_id(harness))
-            .join(&timestamp);
+        let backup_path = self.backups_dir().join(harness.id()).join(&timestamp);
 
         std::fs::create_dir_all(&backup_path)?;
 
@@ -236,13 +220,13 @@ impl ProfileManager {
         Ok(backup_path)
     }
 
-    fn save_to_profile(&self, harness: &Harness, name: &ProfileName) -> Result<()> {
+    fn save_to_profile(&self, harness: &dyn HarnessConfig, name: &ProfileName) -> Result<()> {
         let profile_path = self.profile_path(harness, name);
         if !profile_path.exists() {
             return Ok(());
         }
 
-        let source_dir = harness.config(&Scope::Global)?;
+        let source_dir = harness.config_dir()?;
         if !source_dir.exists() {
             return Ok(());
         }
@@ -265,14 +249,18 @@ impl ProfileManager {
         Ok(())
     }
 
-    pub fn switch_profile(&self, harness: &Harness, name: &ProfileName) -> Result<PathBuf> {
+    pub fn switch_profile(
+        &self,
+        harness: &dyn HarnessConfig,
+        name: &ProfileName,
+    ) -> Result<PathBuf> {
         let profile_path = self.profile_path(harness, name);
 
         if !profile_path.exists() {
             return Err(Error::ProfileNotFound(name.as_str().to_string()));
         }
 
-        let harness_id = Self::harness_id(harness);
+        let harness_id = harness.id();
         if let Ok(config) = BridleConfig::load()
             && let Some(active_name) = config.active_profile_for(harness_id)
             && let Ok(active_profile) = ProfileName::new(active_name)
@@ -281,7 +269,7 @@ impl ProfileManager {
             let _ = self.save_to_profile(harness, &active_profile);
         }
 
-        let target_dir = harness.config(&Scope::Global)?;
+        let target_dir = harness.config_dir()?;
 
         let temp_dir = target_dir.with_extension("bridle_tmp");
         if temp_dir.exists() {
@@ -302,11 +290,101 @@ impl ProfileManager {
         }
         std::fs::rename(&temp_dir, &target_dir)?;
 
-        let harness_id = Self::harness_id(harness);
         let mut config = BridleConfig::load().unwrap_or_default();
-        config.set_active_profile(harness_id, name.as_str());
+        config.set_active_profile(harness.id(), name.as_str());
         config.save()?;
 
         Ok(target_dir)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    struct MockHarness {
+        id: String,
+        config_dir: PathBuf,
+    }
+
+    impl MockHarness {
+        fn new(id: &str, config_dir: PathBuf) -> Self {
+            Self {
+                id: id.to_string(),
+                config_dir,
+            }
+        }
+    }
+
+    impl HarnessConfig for MockHarness {
+        fn id(&self) -> &str {
+            &self.id
+        }
+
+        fn config_dir(&self) -> Result<PathBuf> {
+            Ok(self.config_dir.clone())
+        }
+
+        fn installation_status(&self) -> Result<InstallationStatus> {
+            Ok(InstallationStatus::FullyInstalled {
+                binary_path: PathBuf::from("/bin/mock"),
+                config_path: self.config_dir.clone(),
+            })
+        }
+
+        fn mcp_filename(&self) -> Option<String> {
+            None
+        }
+
+        fn parse_mcp_servers(&self, _content: &str) -> Result<Vec<String>> {
+            Ok(vec![])
+        }
+    }
+
+    #[test]
+    fn switch_profile_preserves_edits() {
+        let temp = TempDir::new().unwrap();
+        let profiles_dir = temp.path().join("profiles");
+        let live_config = temp.path().join("live_config");
+        fs::create_dir_all(&live_config).unwrap();
+
+        let harness = MockHarness::new("test-harness", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir);
+
+        let profile_a = ProfileName::new("profile-a").unwrap();
+        let profile_b = ProfileName::new("profile-b").unwrap();
+
+        fs::write(live_config.join("initial.txt"), "initial").unwrap();
+        manager.create_from_current(&harness, &profile_a).unwrap();
+
+        fs::write(live_config.join("initial.txt"), "different").unwrap();
+        manager.create_from_current(&harness, &profile_b).unwrap();
+
+        manager.switch_profile(&harness, &profile_a).unwrap();
+        assert_eq!(
+            fs::read_to_string(live_config.join("initial.txt")).unwrap(),
+            "initial"
+        );
+
+        fs::write(live_config.join("edited.txt"), "user edit").unwrap();
+
+        manager.switch_profile(&harness, &profile_b).unwrap();
+        assert_eq!(
+            fs::read_to_string(live_config.join("initial.txt")).unwrap(),
+            "different"
+        );
+
+        manager.switch_profile(&harness, &profile_a).unwrap();
+
+        assert!(
+            live_config.join("edited.txt").exists(),
+            "Edit should be preserved"
+        );
+        assert_eq!(
+            fs::read_to_string(live_config.join("edited.txt")).unwrap(),
+            "user edit"
+        );
     }
 }

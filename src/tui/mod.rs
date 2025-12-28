@@ -6,6 +6,8 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use get_harness::{Harness, HarnessKind, InstallationStatus};
+
+use crate::harness::HarnessConfig;
 use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
@@ -89,7 +91,7 @@ impl App {
     }
 
     fn harness_status_indicator(&self, harness: &Harness) -> char {
-        let harness_id = ProfileManager::harness_id(harness);
+        let harness_id = harness.id();
         if self.bridle_config.active_profile_for(harness_id).is_some() {
             return '*';
         }
