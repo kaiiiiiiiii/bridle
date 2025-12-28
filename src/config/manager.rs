@@ -511,10 +511,17 @@ impl ProfileManager {
         profile_path: &std::path::Path,
     ) -> (ResourceSummary, Option<String>) {
         match harness.skills(&Scope::Global) {
-            Ok(Some(dir)) => (
-                Self::extract_resource_summary(profile_path, "skills", &dir.structure),
-                None,
-            ),
+            Ok(Some(dir)) => {
+                let subdir = dir
+                    .path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("skills");
+                (
+                    Self::extract_resource_summary(profile_path, subdir, &dir.structure),
+                    None,
+                )
+            }
             Ok(None) => (ResourceSummary::default(), None),
             Err(e) => (ResourceSummary::default(), Some(format!("skills: {}", e))),
         }
@@ -526,10 +533,17 @@ impl ProfileManager {
         profile_path: &std::path::Path,
     ) -> (ResourceSummary, Option<String>) {
         match harness.commands(&Scope::Global) {
-            Ok(Some(dir)) => (
-                Self::extract_resource_summary(profile_path, "commands", &dir.structure),
-                None,
-            ),
+            Ok(Some(dir)) => {
+                let subdir = dir
+                    .path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("commands");
+                (
+                    Self::extract_resource_summary(profile_path, subdir, &dir.structure),
+                    None,
+                )
+            }
             Ok(None) => (ResourceSummary::default(), None),
             Err(e) => (ResourceSummary::default(), Some(format!("commands: {}", e))),
         }
@@ -546,14 +560,21 @@ impl ProfileManager {
         }
 
         match harness.plugins(&Scope::Global) {
-            Ok(Some(dir)) => (
-                Some(Self::extract_resource_summary(
-                    profile_path,
-                    "plugins",
-                    &dir.structure,
-                )),
-                None,
-            ),
+            Ok(Some(dir)) => {
+                let subdir = dir
+                    .path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("plugins");
+                (
+                    Some(Self::extract_resource_summary(
+                        profile_path,
+                        subdir,
+                        &dir.structure,
+                    )),
+                    None,
+                )
+            }
             Ok(None) => (None, None),
             Err(e) => (None, Some(format!("plugins: {}", e))),
         }
@@ -608,14 +629,21 @@ impl ProfileManager {
         profile_path: &std::path::Path,
     ) -> (Option<ResourceSummary>, Option<String>) {
         match harness.agents(&Scope::Global) {
-            Ok(Some(dir)) => (
-                Some(Self::extract_resource_summary(
-                    profile_path,
-                    "agents",
-                    &dir.structure,
-                )),
-                None,
-            ),
+            Ok(Some(dir)) => {
+                let subdir = dir
+                    .path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("agents");
+                (
+                    Some(Self::extract_resource_summary(
+                        profile_path,
+                        subdir,
+                        &dir.structure,
+                    )),
+                    None,
+                )
+            }
             Ok(None) => (None, None),
             Err(e) => (None, Some(format!("agents: {}", e))),
         }
