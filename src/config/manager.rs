@@ -236,11 +236,49 @@ impl ProfileManager {
         Ok(backup_path)
     }
 
+    fn save_to_profile(&self, harness: &Harness, name: &ProfileName) -> Result<()> {
+        let profile_path = self.profile_path(harness, name);
+        if !profile_path.exists() {
+            return Ok(());
+        }
+
+        let source_dir = harness.config(&Scope::Global)?;
+        if !source_dir.exists() {
+            return Ok(());
+        }
+
+        for entry in std::fs::read_dir(&profile_path)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                std::fs::remove_file(entry.path())?;
+            }
+        }
+
+        for entry in std::fs::read_dir(&source_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                let dest = profile_path.join(entry.file_name());
+                std::fs::copy(entry.path(), dest)?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn switch_profile(&self, harness: &Harness, name: &ProfileName) -> Result<PathBuf> {
         let profile_path = self.profile_path(harness, name);
 
         if !profile_path.exists() {
             return Err(Error::ProfileNotFound(name.as_str().to_string()));
+        }
+
+        let harness_id = Self::harness_id(harness);
+        if let Ok(config) = BridleConfig::load()
+            && let Some(active_name) = config.active_profile_for(harness_id)
+            && let Ok(active_profile) = ProfileName::new(active_name)
+            && active_profile.as_str() != name.as_str()
+        {
+            let _ = self.save_to_profile(harness, &active_profile);
         }
 
         let target_dir = harness.config(&Scope::Global)?;
