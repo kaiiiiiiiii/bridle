@@ -50,6 +50,7 @@ struct App {
     show_help: bool,
     input_mode: InputMode,
     input_buffer: String,
+    needs_full_redraw: bool,
 }
 
 impl App {
@@ -80,6 +81,7 @@ impl App {
             show_help: false,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
+            needs_full_redraw: false,
         };
 
         app.refresh_profiles();
@@ -244,6 +246,7 @@ impl App {
             .arg(&profile_path)
             .status();
         let _ = reinit_terminal_after_editor();
+        self.needs_full_redraw = true;
 
         match status {
             Ok(s) if s.success() => {
@@ -883,6 +886,10 @@ pub fn run() -> Result<(), Error> {
     let mut app = App::new()?;
 
     while app.running {
+        if app.needs_full_redraw {
+            terminal.clear().map_err(Error::Io)?;
+            app.needs_full_redraw = false;
+        }
         terminal
             .draw(|frame| ui(frame, &mut app))
             .map_err(Error::Io)?;
