@@ -385,9 +385,18 @@ impl ProfileManager {
         let content = std::fs::read_to_string(&config_path).ok()?;
         let clean_json = strip_jsonc_comments(&content);
         let parsed: serde_json::Value = serde_json::from_str(&clean_json).ok()?;
+
+        // Check top-level model first, then fall back to nested agent.general.model
         parsed
             .get("model")
             .and_then(|v| v.as_str())
+            .or_else(|| {
+                parsed
+                    .get("agent")
+                    .and_then(|a| a.get("general"))
+                    .and_then(|g| g.get("model"))
+                    .and_then(|v| v.as_str())
+            })
             .map(String::from)
     }
 
