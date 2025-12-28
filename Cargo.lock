@@ -434,6 +434,8 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 [[package]]
 name = "harness-locate"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11789daac897ffd54bcd59273a99762f283d54c4ce5b6c2951fcd6e7b6cee397"
 dependencies = [
  "home",
  "serde",
