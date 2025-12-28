@@ -20,7 +20,15 @@ pub trait HarnessConfig {
     fn config_dir(&self) -> Result<PathBuf>;
     fn installation_status(&self) -> Result<InstallationStatus>;
     fn mcp_filename(&self) -> Option<String>;
-    fn parse_mcp_servers(&self, content: &str) -> Result<Vec<String>>;
+    fn parse_mcp_servers(&self, content: &str) -> Result<Vec<(String, bool)>>;
+}
+
+fn mcp_server_enabled(server: &McpServer) -> bool {
+    match server {
+        McpServer::Stdio(s) => s.enabled,
+        McpServer::Sse(s) => s.enabled,
+        McpServer::Http(s) => s.enabled,
+    }
 }
 
 impl HarnessConfig for get_harness::Harness {
@@ -50,12 +58,15 @@ impl HarnessConfig for get_harness::Harness {
             .and_then(|n| n.into_string().ok())
     }
 
-    fn parse_mcp_servers(&self, content: &str) -> Result<Vec<String>> {
+    fn parse_mcp_servers(&self, content: &str) -> Result<Vec<(String, bool)>> {
         let parsed: serde_json::Value = serde_json::from_str(content)?;
         let servers: std::collections::HashMap<String, McpServer> =
             self.parse_mcp_config(&parsed)?;
-        let mut names: Vec<String> = servers.keys().cloned().collect();
-        names.sort();
-        Ok(names)
+        let mut result: Vec<(String, bool)> = servers
+            .iter()
+            .map(|(name, server)| (name.clone(), mcp_server_enabled(server)))
+            .collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(result)
     }
 }
