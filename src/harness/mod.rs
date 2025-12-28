@@ -8,7 +8,7 @@ mod display;
 
 use std::path::PathBuf;
 
-use get_harness::{InstallationStatus, McpServer, Scope};
+use harness_locate::{InstallationStatus, McpServer, Scope};
 
 use crate::error::Result;
 
@@ -31,12 +31,12 @@ fn mcp_server_enabled(server: &McpServer) -> bool {
     }
 }
 
-impl HarnessConfig for get_harness::Harness {
+impl HarnessConfig for harness_locate::Harness {
     fn id(&self) -> &'static str {
         match self.kind() {
-            get_harness::HarnessKind::ClaudeCode => "claude-code",
-            get_harness::HarnessKind::OpenCode => "opencode",
-            get_harness::HarnessKind::Goose => "goose",
+            harness_locate::HarnessKind::ClaudeCode => "claude-code",
+            harness_locate::HarnessKind::OpenCode => "opencode",
+            harness_locate::HarnessKind::Goose => "goose",
             _ => "unknown",
         }
     }
@@ -46,7 +46,7 @@ impl HarnessConfig for get_harness::Harness {
     }
 
     fn installation_status(&self) -> Result<InstallationStatus> {
-        Ok(get_harness::Harness::installation_status(self)?)
+        Ok(harness_locate::Harness::installation_status(self)?)
     }
 
     fn mcp_filename(&self) -> Option<String> {

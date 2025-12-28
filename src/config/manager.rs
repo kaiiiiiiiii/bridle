@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use chrono::Local;
-use get_harness::{DirectoryStructure, Harness, InstallationStatus, Scope};
+use harness_locate::{DirectoryStructure, Harness, InstallationStatus, Scope};
 
 use super::BridleConfig;
 use super::profile_name::ProfileName;
@@ -56,6 +56,37 @@ fn strip_jsonc_comments(input: &str) -> String {
                     }
                 }
                 _ => result.push(c),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    strip_trailing_commas(&result)
+}
+
+fn strip_trailing_commas(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    let mut in_string = false;
+
+    while let Some(c) = chars.next() {
+        if c == '"' && !result.ends_with('\\') {
+            in_string = !in_string;
+            result.push(c);
+            continue;
+        }
+
+        if !in_string && c == ',' {
+            let mut lookahead = chars.clone();
+            let has_trailing = loop {
+                match lookahead.next() {
+                    Some(ch) if ch.is_whitespace() => continue,
+                    Some(']') | Some('}') => break true,
+                    _ => break false,
+                }
+            };
+            if !has_trailing {
+                result.push(c);
             }
         } else {
             result.push(c);
@@ -415,6 +446,11 @@ impl ProfileManager {
         harness: &Harness,
         profile_path: &std::path::Path,
     ) -> (Option<ResourceSummary>, Option<String>) {
+        // OpenCode stores plugins as JSON array in config, not directory
+        if harness.id() == "opencode" {
+            return self.extract_plugins_from_opencode_config(profile_path);
+        }
+
         match harness.plugins(&Scope::Global) {
             Ok(Some(dir)) => (
                 Some(Self::extract_resource_summary(
@@ -426,6 +462,49 @@ impl ProfileManager {
             ),
             Ok(None) => (None, None),
             Err(e) => (None, Some(format!("plugins: {}", e))),
+        }
+    }
+
+    fn extract_plugins_from_opencode_config(
+        &self,
+        profile_path: &std::path::Path,
+    ) -> (Option<ResourceSummary>, Option<String>) {
+        let config_path = profile_path.join("opencode.jsonc");
+        if !config_path.exists() {
+            return (None, None);
+        }
+
+        let content = match std::fs::read_to_string(&config_path) {
+            Ok(c) => c,
+            Err(e) => return (None, Some(format!("plugins: {}", e))),
+        };
+
+        let clean_json = strip_jsonc_comments(&content);
+        let parsed: serde_json::Value = match serde_json::from_str(&clean_json) {
+            Ok(v) => v,
+            Err(e) => return (None, Some(format!("plugins: {}", e))),
+        };
+
+        let plugins = parsed
+            .get("plugin")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        if plugins.is_empty() {
+            (None, None)
+        } else {
+            (
+                Some(ResourceSummary {
+                    items: plugins,
+                    directory_exists: true,
+                }),
+                None,
+            )
         }
     }
 

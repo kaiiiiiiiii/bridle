@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-get-harness = { path = "../get-harness" }
+harness-locate = { path = "../get-harness" }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }

@@ -31,14 +31,14 @@ impl BridleConfig {
 
     /// Get the default configuration file path.
     pub fn config_path() -> crate::error::Result<PathBuf> {
-        get_harness::platform::config_dir()
+        harness_locate::platform::config_dir()
             .map(|d| d.join("bridle").join("config.toml"))
             .map_err(|e| crate::error::Error::NoConfigFound(e.to_string()))
     }
 
     /// Get the configuration directory path.
     pub fn config_dir() -> crate::error::Result<PathBuf> {
-        get_harness::platform::config_dir()
+        harness_locate::platform::config_dir()
             .map(|d| d.join("bridle"))
             .map_err(|e| crate::error::Error::NoConfigFound(e.to_string()))
     }

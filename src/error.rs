@@ -52,5 +52,5 @@ pub enum Error {
 
     /// Harness error.
     #[error(transparent)]
-    Harness(#[from] get_harness::Error),
+    Harness(#[from] harness_locate::Error),
 }

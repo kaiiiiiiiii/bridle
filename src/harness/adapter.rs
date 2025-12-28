@@ -1,6 +1,6 @@
 //! Wrapper over get-harness functionality.
 
-use get_harness::Harness;
+use harness_locate::Harness;
 
 /// Adapter for interacting with harnesses.
 #[derive(Debug)]
