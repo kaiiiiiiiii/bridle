@@ -659,7 +659,7 @@ fn render_profile_expanded(profile: &ProfileInfo) -> Vec<Line<'static>> {
                     if !summary.directory_exists {
                         lines.push(Line::styled(
                             format!("  {} └─ (directory not found)", cont),
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(Color::Yellow),
                         ));
                     }
                 } else {
