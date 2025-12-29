@@ -761,18 +761,47 @@ impl ProfileManager {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("agents");
-                (
-                    Some(Self::extract_resource_summary(
-                        profile_path,
-                        subdir,
-                        &dir.structure,
-                    )),
-                    None,
-                )
+                let summary = Self::extract_resource_summary(profile_path, subdir, &dir.structure);
+                if !summary.items.is_empty() {
+                    return (Some(summary), None);
+                }
+                let md_summary = Self::extract_resource_summary(
+                    profile_path,
+                    subdir,
+                    &DirectoryStructure::Flat {
+                        file_pattern: "*.md".to_string(),
+                    },
+                );
+                if !md_summary.items.is_empty() || md_summary.directory_exists {
+                    return (Some(md_summary), None);
+                }
+                (Some(summary), None)
             }
-            Ok(None) => (None, None),
+            Ok(None) => self.extract_agents_fallback(profile_path),
             Err(e) => (None, Some(format!("agents: {}", e))),
         }
+    }
+
+    fn extract_agents_fallback(
+        &self,
+        profile_path: &std::path::Path,
+    ) -> (Option<ResourceSummary>, Option<String>) {
+        for subdir in ["agent", "agents"] {
+            let dir_path = profile_path.join(subdir);
+            if dir_path.exists() && dir_path.is_dir() {
+                let summary = Self::extract_resource_summary(
+                    profile_path,
+                    subdir,
+                    &DirectoryStructure::Flat {
+                        file_pattern: "*.md".to_string(),
+                    },
+                );
+                if !summary.items.is_empty() || summary.directory_exists {
+                    return (Some(summary), None);
+                }
+            }
+        }
+        (None, None)
     }
 
     fn extract_rules_file(
