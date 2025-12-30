@@ -16,7 +16,7 @@ struct Cli {
     output: OutputFormat,
 
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 fn main() -> color_eyre::Result<()> {
@@ -26,9 +26,10 @@ fn main() -> color_eyre::Result<()> {
     let format = cli.output.resolve();
 
     match cli.command {
-        Commands::Status => cli::status::display_status(format),
-        Commands::Init => cli::init::run_init(),
-        Commands::Profile(profile_cmd) => match profile_cmd {
+        None | Some(Commands::Tui) => cli::tui::run_tui()?,
+        Some(Commands::Status) => cli::status::display_status(format),
+        Some(Commands::Init) => cli::init::run_init(),
+        Some(Commands::Profile(profile_cmd)) => match profile_cmd {
             ProfileCommands::List { harness } => cli::profile::list_profiles(&harness, format),
             ProfileCommands::Show { harness, name } => {
                 cli::profile::show_profile(&harness, &name, format)
@@ -57,8 +58,7 @@ fn main() -> color_eyre::Result<()> {
                 other,
             } => cli::profile::diff_profiles(&harness, &name, other.as_deref()),
         },
-        Commands::Tui => cli::tui::run_tui()?,
-        Commands::Config(config_cmd) => match config_cmd {
+        Some(Commands::Config(config_cmd)) => match config_cmd {
             ConfigCommands::Set { key, value } => cli::config_cmd::set_config(&key, &value),
             ConfigCommands::Get { key } => cli::config_cmd::get_config(&key),
         },
