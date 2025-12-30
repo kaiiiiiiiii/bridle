@@ -756,10 +756,23 @@ impl ProfileManager {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("skills");
-                (
-                    Self::extract_resource_summary(profile_path, subdir, &dir.structure),
-                    None,
-                )
+                let summary = Self::extract_resource_summary(profile_path, subdir, &dir.structure);
+                if !summary.items.is_empty() {
+                    return (summary, None);
+                }
+                // Fallback: try *.md pattern if harness-locate structure didn't find files
+                let md_summary = Self::extract_resource_summary(
+                    profile_path,
+                    subdir,
+                    &DirectoryStructure::Flat {
+                        file_pattern: "*.md".to_string(),
+                    },
+                );
+                if !md_summary.items.is_empty() || md_summary.directory_exists {
+                    (md_summary, None)
+                } else {
+                    (summary, None)
+                }
             }
             Ok(None) => (ResourceSummary::default(), None),
             Err(e) => (ResourceSummary::default(), Some(format!("skills: {}", e))),
