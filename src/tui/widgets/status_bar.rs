@@ -46,7 +46,7 @@ impl<'a> StatusBar<'a> {
     fn keybindings(&self) -> &'static str {
         match self.view_mode {
             ViewMode::Dashboard => {
-                "q:quit  ←/→:harness  ↑/↓:profile  Enter:switch  n:new  d:del  e:edit  r:refresh  ?:help"
+                "q:quit  ←/→:harness  ↑/↓:profile  Tab:focus  Enter:switch  n:new  d:del  e:edit  r:refresh  ?:help"
             }
             ViewMode::Legacy => {
                 "q:quit  Tab:pane  ↑/↓:nav  Enter:switch  n:new  d:del  e:edit  r:refresh  ?:help"
