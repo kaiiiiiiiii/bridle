@@ -260,7 +260,9 @@ impl App {
     }
 
     fn scroll_detail_down(&mut self) {
-        self.detail_scroll = self.detail_scroll.saturating_add(1);
+        if self.detail_scroll < 1000 {
+            self.detail_scroll = self.detail_scroll.saturating_add(1);
+        }
     }
 
     fn handle_mouse(&mut self, event: MouseEvent) {
@@ -271,11 +273,22 @@ impl App {
                 if self.harness_area.is_some_and(|a| a.contains(pos)) {
                     self.active_pane = Pane::Harnesses;
                     let area = self.harness_area.unwrap();
-                    let inner_y = event.row.saturating_sub(area.y).saturating_sub(1);
-                    let idx = inner_y as usize;
-                    if idx < self.harnesses.len() {
-                        self.harness_state.select(Some(idx));
-                        self.refresh_profiles();
+
+                    if self.view_mode == ViewMode::Dashboard {
+                        let inner_x = event.column.saturating_sub(area.x).saturating_sub(2);
+                        let tab_width = 15;
+                        let idx = (inner_x / tab_width) as usize;
+                        if idx < self.harnesses.len() {
+                            self.harness_state.select(Some(idx));
+                            self.refresh_profiles();
+                        }
+                    } else {
+                        let inner_y = event.row.saturating_sub(area.y).saturating_sub(1);
+                        let idx = inner_y as usize;
+                        if idx < self.harnesses.len() {
+                            self.harness_state.select(Some(idx));
+                            self.refresh_profiles();
+                        }
                     }
                 } else if self.profile_area.is_some_and(|a| a.contains(pos)) {
                     self.active_pane = Pane::Profiles;
@@ -797,7 +810,7 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
 }
 
 fn render_profile_table(frame: &mut Frame, app: &mut App, area: Rect) {
-    let table = ProfileTable::new(&app.profiles);
+    let table = ProfileTable::new(&app.profiles).focused(app.active_pane == Pane::Profiles);
     frame.render_stateful_widget(table, area, &mut app.profile_table_state);
 }
 
@@ -814,7 +827,8 @@ fn render_detail_pane(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_harness_tabs(frame: &mut Frame, app: &App, area: Rect) {
-    let mut tabs = HarnessTabs::new(&app.harnesses, app.harness_state.selected().unwrap_or(0));
+    let mut tabs = HarnessTabs::new(&app.harnesses, app.harness_state.selected().unwrap_or(0))
+        .focused(app.active_pane == Pane::Harnesses);
 
     for kind in &app.harnesses {
         let harness = Harness::new(*kind);

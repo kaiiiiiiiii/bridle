@@ -4,11 +4,6 @@ use ratatui::style::{Color, Modifier, Style};
 pub struct Theme;
 
 impl Theme {
-    // Pane borders
-    pub fn border_active() -> Style {
-        Style::default().fg(Color::Cyan)
-    }
-
     #[cfg(feature = "tui-cards")]
     pub fn profile_active() -> Style {
         Style::default()
