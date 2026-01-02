@@ -4,6 +4,7 @@
 #![allow(unused_imports)]
 
 pub mod discovery;
+pub mod installer;
 mod types;
 
 pub use discovery::{discover_skills, DiscoveryError};
