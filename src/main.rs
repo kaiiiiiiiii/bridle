@@ -64,6 +64,7 @@ fn main() -> color_eyre::Result<()> {
             ConfigCommands::Set { key, value } => cli::config_cmd::set_config(&key, &value)?,
             ConfigCommands::Get { key } => cli::config_cmd::get_config(&key)?,
         },
+        Some(Commands::Install { source, force }) => cli::install::run(&source, force)?,
     }
 
     Ok(())

@@ -20,6 +20,15 @@ pub enum Commands {
     /// Manage bridle settings.
     #[command(subcommand)]
     Config(ConfigCommands),
+
+    /// Install skills from a GitHub repository.
+    Install {
+        /// GitHub repository URL or owner/repo shorthand.
+        source: String,
+        /// Force overwrite existing skills.
+        #[arg(long, short)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
