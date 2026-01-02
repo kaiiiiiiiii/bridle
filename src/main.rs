@@ -65,6 +65,9 @@ fn main() -> color_eyre::Result<()> {
             ConfigCommands::Get { key } => cli::config_cmd::get_config(&key)?,
         },
         Some(Commands::Install { source, force }) => cli::install::run(&source, force)?,
+        Some(Commands::Uninstall { harness, profile }) => {
+            cli::uninstall::run(&harness, &profile)?
+        }
     }
 
     Ok(())

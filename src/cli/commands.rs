@@ -29,6 +29,14 @@ pub enum Commands {
         #[arg(long, short)]
         force: bool,
     },
+
+    /// Uninstall components from a profile.
+    Uninstall {
+        /// Harness name (claude-code, opencode, goose).
+        harness: String,
+        /// Profile name.
+        profile: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]

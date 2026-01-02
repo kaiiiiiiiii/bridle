@@ -124,3 +124,50 @@ pub struct InstallFailure {
     pub target: InstallTarget,
     pub error: String,
 }
+
+/// Component type for uninstall operations
+#[derive(Debug, Clone, Copy)]
+pub enum ComponentType {
+    Skill,
+    Agent,
+    Command,
+}
+
+impl ComponentType {
+    pub fn dir_name(&self) -> &'static str {
+        match self {
+            ComponentType::Skill => "skills",
+            ComponentType::Agent => "agents",
+            ComponentType::Command => "commands",
+        }
+    }
+}
+
+/// Result of uninstallation operation
+#[derive(Debug, Default, Serialize)]
+pub struct UninstallReport {
+    pub removed: Vec<UninstallSuccess>,
+    pub errors: Vec<UninstallFailure>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UninstallSuccess {
+    /// Component name
+    pub component: String,
+    /// Component type
+    pub component_type: String,
+    /// Where it was removed from
+    pub target: InstallTarget,
+    /// Profile path that was removed
+    pub profile_path: PathBuf,
+    /// Harness path that was removed (if active profile)
+    pub harness_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UninstallFailure {
+    pub component: String,
+    pub component_type: String,
+    pub target: InstallTarget,
+    pub error: String,
+}

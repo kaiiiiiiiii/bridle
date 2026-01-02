@@ -8,5 +8,6 @@ pub mod output;
 pub mod profile;
 pub mod status;
 pub mod tui;
+pub mod uninstall;
 
 pub use commands::{Commands, ConfigCommands, ProfileCommands};
