@@ -545,8 +545,6 @@ dependencies = [
 [[package]]
 name = "dialoguer-multiselect"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a7e2857f67265459e63841508eaf1fb95044cb0ce96bdf355bcee584f6d2dbe"
 dependencies = [
  "console",
  "shell-words",

@@ -2,19 +2,26 @@
 
 use std::io::IsTerminal;
 
-use color_eyre::eyre::{Result, eyre};
-use dialoguer_multiselect::GroupMultiSelect;
+use color_eyre::eyre::{eyre, Result};
 use dialoguer_multiselect::theme::ColorfulTheme;
+use dialoguer_multiselect::{GroupMultiSelect, ItemState};
 
-use harness_locate::{Harness, HarnessKind, Scope};
+use harness_locate::{validate_agent_for_harness, Harness, HarnessKind, Scope, Severity};
 
 use crate::config::{BridleConfig, ProfileManager};
 use crate::harness::HarnessConfig;
-use crate::install::discovery::{DiscoveryError, discover_skills};
+use crate::install::discovery::{discover_skills, DiscoveryError};
 use crate::install::installer::{install_agent, install_command, install_skills};
 use crate::install::{
     AgentInfo, CommandInfo, DiscoveryResult, InstallOptions, InstallTarget, McpInfo, SkillInfo,
 };
+
+type TargetGroup = (
+    String,
+    Vec<(String, ItemState)>,
+    Vec<InstallTarget>,
+    Vec<bool>,
+);
 
 fn harness_supports_agents(harness_id: &str) -> bool {
     parse_harness_kind(harness_id)
@@ -28,6 +35,16 @@ fn harness_supports_commands(harness_id: &str) -> bool {
         .and_then(|kind| Harness::locate(kind).ok())
         .and_then(|h| h.commands(&Scope::Global).ok().flatten())
         .is_some()
+}
+
+fn count_incompatible_agents(agents: &[AgentInfo], kind: HarnessKind) -> usize {
+    agents
+        .iter()
+        .filter(|a| {
+            let issues = validate_agent_for_harness(&a.content, kind);
+            issues.iter().any(|i| i.severity == Severity::Error)
+        })
+        .count()
 }
 
 fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
@@ -108,7 +125,7 @@ pub fn run(source: &str, force: bool) -> Result<()> {
         return Ok(());
     }
 
-    let targets = select_targets()?;
+    let targets = select_targets(&selected)?;
 
     if targets.is_empty() {
         eprintln!("No targets selected");
@@ -315,9 +332,7 @@ fn normalize_source(source: &str) -> String {
     }
 }
 
-fn select_targets() -> Result<Vec<InstallTarget>> {
-    use harness_locate::{Harness, HarnessKind};
-
+fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
     let config = BridleConfig::load()?;
     let profiles_dir = BridleConfig::profiles_dir()?;
     let manager = ProfileManager::new(profiles_dir);
@@ -329,7 +344,7 @@ fn select_targets() -> Result<Vec<InstallTarget>> {
         HarnessKind::AmpCode,
     ];
 
-    let mut groups: Vec<(String, Vec<String>, Vec<InstallTarget>)> = Vec::new();
+    let mut groups: Vec<TargetGroup> = Vec::new();
 
     for kind in &harness_kinds {
         let Ok(harness) = Harness::locate(*kind) else {
@@ -345,8 +360,16 @@ fn select_targets() -> Result<Vec<InstallTarget>> {
         }
 
         let active_profile = config.active_profile_for(harness_id);
-        let mut labels = Vec::new();
+        let supports_agents = harness_supports_agents(harness_id);
+        let incompatible_agent_count = if supports_agents && !selected.agents.is_empty() {
+            count_incompatible_agents(&selected.agents, *kind)
+        } else {
+            0
+        };
+
+        let mut items_with_states = Vec::new();
         let mut targets = Vec::new();
+        let mut defaults = Vec::new();
 
         for profile in profiles {
             let is_active = active_profile == Some(profile.as_str());
@@ -355,14 +378,30 @@ fn select_targets() -> Result<Vec<InstallTarget>> {
             } else {
                 profile.to_string()
             };
-            labels.push(label);
+
+            let state = if !selected.agents.is_empty() && !supports_agents {
+                ItemState::Disabled {
+                    reason: "agents not supported".into(),
+                }
+            } else if incompatible_agent_count > 0 {
+                ItemState::Warning {
+                    message: format!("{} agent(s) incompatible", incompatible_agent_count),
+                }
+            } else {
+                ItemState::Normal
+            };
+
+            let default_selected = is_active && !matches!(state, ItemState::Disabled { .. });
+
+            items_with_states.push((label, state));
             targets.push(InstallTarget {
                 harness: harness_id.to_string(),
                 profile,
             });
+            defaults.push(default_selected);
         }
 
-        groups.push((harness_id.to_string(), labels, targets));
+        groups.push((harness_id.to_string(), items_with_states, targets, defaults));
     }
 
     if groups.is_empty() {
@@ -371,25 +410,16 @@ fn select_targets() -> Result<Vec<InstallTarget>> {
         ));
     }
 
-    let defaults: Vec<Vec<bool>> = groups
-        .iter()
-        .map(|(_, labels, _)| {
-            labels
-                .iter()
-                .map(|label| label.contains("(active)"))
-                .collect()
-        })
-        .collect();
+    let all_defaults: Vec<Vec<bool>> = groups.iter().map(|(_, _, _, d)| d.clone()).collect();
 
     let theme = ColorfulTheme::default();
     let mut group_select = GroupMultiSelect::new()
         .with_theme(&theme)
         .with_prompt("Select target profiles (Esc to cancel)")
-        .defaults(defaults);
+        .defaults(all_defaults);
 
-    for (harness_id, labels, _) in &groups {
-        let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
-        group_select = group_select.group(harness_id, label_refs);
+    for (harness_id, items_with_states, _, _) in &groups {
+        group_select = group_select.group_with_states(harness_id, items_with_states.clone());
     }
 
     let Some(selections) = group_select.interact_opt()? else {
@@ -398,7 +428,7 @@ fn select_targets() -> Result<Vec<InstallTarget>> {
 
     let mut selected_targets = Vec::new();
     for (group_idx, indices) in selections.iter().enumerate() {
-        let (_, _, targets) = &groups[group_idx];
+        let (_, _, targets, _) = &groups[group_idx];
         for &item_idx in indices {
             selected_targets.push(targets[item_idx].clone());
         }
