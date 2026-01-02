@@ -4,7 +4,7 @@ use std::io::IsTerminal;
 
 use color_eyre::eyre::{eyre, Result};
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::MultiSelect;
+use dialoguer::{GroupMultiSelect, MultiSelect};
 
 use crate::config::{BridleConfig, ProfileManager};
 use crate::harness::HarnessConfig;
@@ -117,7 +117,8 @@ fn select_targets() -> Result<Vec<InstallTarget>> {
         HarnessKind::ClaudeCode,
         HarnessKind::Goose,
     ];
-    let mut target_options: Vec<(String, InstallTarget)> = Vec::new();
+
+    let mut groups: Vec<(String, Vec<String>, Vec<InstallTarget>)> = Vec::new();
 
     for kind in &harness_kinds {
         let Ok(harness) = Harness::locate(*kind) else {
@@ -127,42 +128,72 @@ fn select_targets() -> Result<Vec<InstallTarget>> {
         let Ok(profiles) = manager.list_profiles(&harness) else {
             continue;
         };
-        for profile in profiles {
-            let label = format!("{}/{}", harness_id, profile);
-            target_options.push((
-                label,
-                InstallTarget {
-                    harness: harness_id.to_string(),
-                    profile,
-                },
-            ));
+
+        if profiles.is_empty() {
+            continue;
         }
+
+        let active_profile = config.active_profile_for(harness_id);
+        let mut labels = Vec::new();
+        let mut targets = Vec::new();
+
+        for profile in profiles {
+            let is_active = active_profile == Some(profile.as_str());
+            let label = if is_active {
+                format!("{} (active)", profile)
+            } else {
+                profile.to_string()
+            };
+            labels.push(label);
+            targets.push(InstallTarget {
+                harness: harness_id.to_string(),
+                profile,
+            });
+        }
+
+        groups.push((harness_id.to_string(), labels, targets));
     }
 
-    if target_options.is_empty() {
-        return Err(eyre!("No profiles found. Create a profile first with: bridle profile create <harness> <name>"));
+    if groups.is_empty() {
+        return Err(eyre!(
+            "No profiles found. Create a profile first with: bridle profile create <harness> <name>"
+        ));
     }
 
-    let labels: Vec<&str> = target_options.iter().map(|(l, _)| l.as_str()).collect();
-
-    let active_indices: Vec<bool> = target_options
+    let defaults: Vec<Vec<bool>> = groups
         .iter()
-        .map(|(_, t)| config.active_profile_for(&t.harness) == Some(t.profile.as_str()))
+        .map(|(_, labels, _)| {
+            labels
+                .iter()
+                .map(|label| label.contains("(active)"))
+                .collect()
+        })
         .collect();
 
-    let Some(selected) = MultiSelect::with_theme(&ColorfulTheme::default())
+    let theme = ColorfulTheme::default();
+    let mut group_select = GroupMultiSelect::new()
+        .with_theme(&theme)
         .with_prompt("Select target profiles (Esc to cancel)")
-        .items(&labels)
-        .defaults(&active_indices)
-        .interact_opt()?
-    else {
+        .defaults(defaults);
+
+    for (harness_id, labels, _) in &groups {
+        let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+        group_select = group_select.group(harness_id, label_refs);
+    }
+
+    let Some(selections) = group_select.interact_opt()? else {
         return Ok(Vec::new());
     };
 
-    Ok(selected
-        .into_iter()
-        .map(|i| target_options[i].1.clone())
-        .collect())
+    let mut selected_targets = Vec::new();
+    for (group_idx, indices) in selections.iter().enumerate() {
+        let (_, _, targets) = &groups[group_idx];
+        for &item_idx in indices {
+            selected_targets.push(targets[item_idx].clone());
+        }
+    }
+
+    Ok(selected_targets)
 }
 
 #[cfg(test)]
