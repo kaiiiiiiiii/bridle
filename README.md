@@ -140,6 +140,9 @@ view = "Dashboard"      # Will add more later :P
 | Goose       | `~/.config/goose/`      | Full support |
 | Amp         | `~/.amp/`               | Experimental (ish) |
 
+## Honorable Mentions
+- Thank you Melvyn for [pointing out my stupidity](https://x.com/melvynxdev/status/2007312037920289275?s=20)
+
 ## License
 
 MIT
