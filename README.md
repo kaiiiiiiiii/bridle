@@ -4,7 +4,8 @@
 
 Unified configuration manager for AI coding assistants. Manage profiles, install skills/agents/commands, and switch configurations across Claude Code, OpenCode, Goose, and Amp.
 
-> **Note:** If you're on a version before 0.2.2, please update immediately. Older versions had a critical bug that could cause data loss during profile switches.
+> [!WARNING]
+> If you're on a version before 0.2.2, please update immediately. Older versions had a critical bug that could cause data loss during profile switches.
 
 ## Installation
 
