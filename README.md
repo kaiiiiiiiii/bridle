@@ -8,7 +8,7 @@ Unified configuration manager for AI coding assistants. Manage profiles, install
 
 ```bash
 # Homebrew
-brew install neiii/tap/bridle
+brew install neiii/bridle/bridle
 
 # Cargo
 cargo install bridle
