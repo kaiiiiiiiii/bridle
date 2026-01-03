@@ -2,15 +2,15 @@
 
 use std::io::IsTerminal;
 
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{Result, eyre};
 use dialoguer_multiselect::theme::ColorfulTheme;
 use dialoguer_multiselect::{GroupMultiSelect, ItemState};
 
-use harness_locate::{validate_agent_for_harness, Harness, HarnessKind, Scope, Severity};
+use harness_locate::{Harness, HarnessKind, Scope, Severity, validate_agent_for_harness};
 
 use crate::config::{BridleConfig, ProfileManager};
 use crate::harness::HarnessConfig;
-use crate::install::discovery::{discover_skills, DiscoveryError};
+use crate::install::discovery::{DiscoveryError, discover_skills};
 use crate::install::installer::{install_agent, install_command, install_skills};
 use crate::install::{
     AgentInfo, CommandInfo, DiscoveryResult, InstallOptions, InstallTarget, McpInfo, SkillInfo,
@@ -273,7 +273,6 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     let mut group_select = GroupMultiSelect::new()
         .with_theme(&theme)
         .with_prompt("Select components to install (Esc to cancel)")
-        .max_length(20)
         .defaults(defaults);
 
     for (category, names, _) in &groups {
@@ -453,7 +452,6 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
     let mut group_select = GroupMultiSelect::new()
         .with_theme(&theme)
         .with_prompt("Select target profiles (Esc to cancel)")
-        .max_length(20)
         .defaults(all_defaults);
 
     for (harness_id, items_with_states, _, _) in &groups {

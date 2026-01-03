@@ -1,6 +1,6 @@
 [package]
 name = "bridle"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "Unified configuration manager for AI coding assistants (Claude Code, OpenCode, Goose, AMP Code)"
 license = "MIT"
@@ -18,7 +18,7 @@ skills-locate = "0.1.1"
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }
-dialoguer-multiselect = "0.13.0"
+dialoguer-multiselect = "0.13.2"
 
 
 # Serialization

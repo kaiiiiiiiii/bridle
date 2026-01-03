@@ -1,13 +1,13 @@
 //! Skill installation executor.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
 use harness_locate::{Harness, HarnessKind, Scope};
 
-use super::manifest::{manifest_path, InstallManifest, ManifestEntry};
+use super::manifest::{InstallManifest, ManifestEntry, manifest_path};
 use super::types::{
     AgentInfo, CommandInfo, ComponentType, InstallFailure, InstallOptions, InstallReport,
     InstallSkip, InstallSuccess, InstallTarget, SkillInfo, SkipReason, SourceInfo,
@@ -238,28 +238,45 @@ fn install_skill_to_dir_with_source(
         });
     }
 
-    let skill_dir = profile_dir.join("skills").join(&skill.name);
+    // For OpenCode, sanitize skill name and content before writing to profile
+    // This ensures consistency between profile and harness (both use sanitized names)
+    let kind = parse_harness_kind(&target.harness);
+    let (skill_name, skill_content) = if matches!(kind, Some(HarnessKind::OpenCode)) {
+        let sanitized = sanitize_name_for_opencode(&skill.name);
+        let transformed = transform_skill_for_opencode(&skill.content, &sanitized);
+        (sanitized, transformed)
+    } else {
+        (skill.name.clone(), skill.content.clone())
+    };
+
+    let skill_dir = profile_dir.join("skills").join(&skill_name);
     let skill_path = skill_dir.join("SKILL.md");
 
     if skill_path.exists() && !options.force {
         return Ok(InstallOutcome::Skipped(InstallSkip {
-            skill: skill.name.clone(),
+            skill: skill_name.clone(),
             target: target.clone(),
             reason: SkipReason::AlreadyExists,
         }));
     }
 
     fs::create_dir_all(&skill_dir).map_err(InstallError::CreateDir)?;
-    fs::write(&skill_path, &skill.content).map_err(InstallError::WriteFile)?;
+    fs::write(&skill_path, &skill_content).map_err(InstallError::WriteFile)?;
 
     if let Some(source_info) = source {
-        update_manifest(&profile_dir, ComponentType::Skill, &skill.name, source_info);
+        update_manifest(&profile_dir, ComponentType::Skill, &skill_name, source_info);
     }
 
-    let harness_path = write_to_harness_if_active(target, skill)?;
+    let skill_for_harness = SkillInfo {
+        name: skill_name.clone(),
+        description: skill.description.clone(),
+        path: skill.path.clone(),
+        content: skill_content,
+    };
+    let harness_path = write_to_harness_if_active(target, &skill_for_harness)?;
 
     Ok(InstallOutcome::Installed(InstallSuccess {
-        skill: skill.name.clone(),
+        skill: skill_name,
         target: target.clone(),
         profile_path: skill_path,
         harness_path,
@@ -417,7 +434,20 @@ pub fn install_agent(
     target: &InstallTarget,
     options: &InstallOptions,
 ) -> InstallResult {
-    install_agent_with_source(agent, target, options, None)
+    let profiles_dir = BridleConfig::profiles_dir().map_err(|_| InstallError::ProfileNotFound {
+        harness: target.harness.clone(),
+        profile: target.profile.as_str().to_string(),
+    })?;
+    install_agent_to_dir(agent, target, options, &profiles_dir)
+}
+
+pub fn install_agent_to_dir(
+    agent: &AgentInfo,
+    target: &InstallTarget,
+    options: &InstallOptions,
+    profiles_dir: &Path,
+) -> InstallResult {
+    install_agent_to_dir_with_source(agent, target, options, profiles_dir, None)
 }
 
 fn install_agent_with_source(
@@ -430,7 +460,16 @@ fn install_agent_with_source(
         harness: target.harness.clone(),
         profile: target.profile.as_str().to_string(),
     })?;
+    install_agent_to_dir_with_source(agent, target, options, &profiles_dir, source)
+}
 
+fn install_agent_to_dir_with_source(
+    agent: &AgentInfo,
+    target: &InstallTarget,
+    options: &InstallOptions,
+    profiles_dir: &Path,
+    source: Option<&SourceInfo>,
+) -> InstallResult {
     validate_component_name(&agent.name)?;
 
     let profile_dir = profiles_dir
@@ -477,7 +516,20 @@ pub fn install_command(
     target: &InstallTarget,
     options: &InstallOptions,
 ) -> InstallResult {
-    install_command_with_source(command, target, options, None)
+    let profiles_dir = BridleConfig::profiles_dir().map_err(|_| InstallError::ProfileNotFound {
+        harness: target.harness.clone(),
+        profile: target.profile.as_str().to_string(),
+    })?;
+    install_command_to_dir(command, target, options, &profiles_dir)
+}
+
+pub fn install_command_to_dir(
+    command: &CommandInfo,
+    target: &InstallTarget,
+    options: &InstallOptions,
+    profiles_dir: &Path,
+) -> InstallResult {
+    install_command_to_dir_with_source(command, target, options, profiles_dir, None)
 }
 
 fn install_command_with_source(
@@ -490,7 +542,16 @@ fn install_command_with_source(
         harness: target.harness.clone(),
         profile: target.profile.as_str().to_string(),
     })?;
+    install_command_to_dir_with_source(command, target, options, &profiles_dir, source)
+}
 
+fn install_command_to_dir_with_source(
+    command: &CommandInfo,
+    target: &InstallTarget,
+    options: &InstallOptions,
+    profiles_dir: &Path,
+    source: Option<&SourceInfo>,
+) -> InstallResult {
     validate_component_name(&command.name)?;
 
     let profile_dir = profiles_dir
@@ -603,7 +664,14 @@ mod tests {
         if let Ok(InstallOutcome::Installed(success)) = result {
             assert!(success.profile_path.exists());
             let content = fs::read_to_string(&success.profile_path).unwrap();
-            assert_eq!(content, "# My Skill\n\nContent here");
+            assert!(
+                content.contains("name: my-skill"),
+                "OpenCode profile should have sanitized frontmatter"
+            );
+            assert!(
+                content.contains("# My Skill"),
+                "Content body should be preserved"
+            );
         }
     }
 
@@ -651,7 +719,14 @@ mod tests {
         assert!(matches!(result, Ok(InstallOutcome::Installed(_))));
 
         let content = fs::read_to_string(skill_dir.join("SKILL.md")).unwrap();
-        assert_eq!(content, "new content");
+        assert!(
+            content.contains("new content"),
+            "New content should be present"
+        );
+        assert!(
+            content.contains("name: existing"),
+            "OpenCode profile should have frontmatter"
+        );
     }
 
     #[test]
@@ -700,7 +775,7 @@ mod tests {
 
     #[test]
     fn install_agent_uses_canonical_agents_dir() {
-        let (_temp, target, _profiles_dir) = setup_test_env();
+        let (_temp, target, profiles_dir) = setup_test_env();
 
         let agent = AgentInfo {
             name: "test-agent".to_string(),
@@ -709,7 +784,8 @@ mod tests {
             content: "# Test Agent".to_string(),
         };
 
-        let result = install_agent(&agent, &target, &InstallOptions::default());
+        let result =
+            install_agent_to_dir(&agent, &target, &InstallOptions::default(), &profiles_dir);
         assert!(result.is_ok());
 
         if let Ok(InstallOutcome::Installed(success)) = result {
@@ -723,7 +799,7 @@ mod tests {
 
     #[test]
     fn install_command_uses_canonical_commands_dir() {
-        let (_temp, target, _profiles_dir) = setup_test_env();
+        let (_temp, target, profiles_dir) = setup_test_env();
 
         let command = CommandInfo {
             name: "test-command".to_string(),
@@ -732,7 +808,8 @@ mod tests {
             content: "# Test Command".to_string(),
         };
 
-        let result = install_command(&command, &target, &InstallOptions::default());
+        let result =
+            install_command_to_dir(&command, &target, &InstallOptions::default(), &profiles_dir);
         assert!(result.is_ok());
 
         if let Ok(InstallOutcome::Installed(success)) = result {
@@ -743,6 +820,40 @@ mod tests {
                     .contains("/commands/"),
                 "Expected path to contain '/commands/', got: {:?}",
                 success.profile_path
+            );
+        }
+    }
+
+    #[test]
+    fn install_sanitizes_skill_name_for_opencode() {
+        let (_temp, target, profiles_dir) = setup_test_env();
+
+        let skill = SkillInfo {
+            name: "Hook Development".to_string(),
+            description: Some("A skill with spaces".to_string()),
+            path: "skills/Hook Development/SKILL.md".to_string(),
+            content: "---\nname: Hook Development\ndescription: Test\n---\n# Content".to_string(),
+        };
+
+        let result =
+            install_skill_to_dir(&skill, &target, &InstallOptions::default(), &profiles_dir);
+        assert!(result.is_ok());
+
+        if let Ok(InstallOutcome::Installed(success)) = result {
+            assert!(
+                success
+                    .profile_path
+                    .to_string_lossy()
+                    .contains("/hook-development/"),
+                "Expected sanitized path with 'hook-development', got: {:?}",
+                success.profile_path
+            );
+
+            let content = fs::read_to_string(&success.profile_path).unwrap();
+            assert!(
+                content.contains("name: hook-development"),
+                "Expected frontmatter name to be sanitized, got: {}",
+                content
             );
         }
     }

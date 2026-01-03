@@ -170,7 +170,7 @@ dependencies = [
 
 [[package]]
 name = "bridle"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -544,9 +544,9 @@ dependencies = [
 
 [[package]]
 name = "dialoguer-multiselect"
-version = "0.13.0"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5773fe61ad0628afe23eadf1e8221ba9bb676401c0f6a2b9e3279d3a12368acf"
+checksum = "2bdb2c440f4a728b0bf56f19347ec91f7155c4cf83dc1827e1e6b93dd4dd668b"
 dependencies = [
  "console",
  "shell-words",
