@@ -158,6 +158,12 @@ impl ProfileManager {
         if let Some(h) = harness_for_resources {
             files::copy_resource_directories(h, true, &profile_path)?;
         }
+
+        if let Ok(mut config) = BridleConfig::load() {
+            config.set_active_profile(harness.id(), name.as_str());
+            let _ = config.save();
+        }
+
         Ok(profile_path)
     }
 
@@ -441,77 +447,64 @@ mod tests {
     }
 
     #[test]
-    fn switch_preserves_unknown_files() {
+    fn switch_does_full_replace() {
         let temp = TempDir::new().unwrap();
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
 
-        let harness = MockHarness::new("test-preserves-unknown", live_config.clone());
-        let manager = ProfileManager::new(profiles_dir);
+        let harness = MockHarness::new("test-full-replace", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
 
         fs::write(live_config.join("known.txt"), "profile content").unwrap();
         let profile_a = ProfileName::new("profile-a").unwrap();
         manager.create_from_current(&harness, &profile_a).unwrap();
 
-        fs::write(live_config.join("unknown.txt"), "precious data").unwrap();
-        fs::create_dir_all(live_config.join("unknown-dir")).unwrap();
-        fs::write(live_config.join("unknown-dir/nested.txt"), "nested precious").unwrap();
+        fs::write(live_config.join("extra.txt"), "extra data").unwrap();
+        fs::create_dir_all(live_config.join("extra-dir")).unwrap();
+        fs::write(live_config.join("extra-dir/nested.txt"), "nested").unwrap();
 
         manager.switch_profile(&harness, &profile_a).unwrap();
 
         assert!(
-            live_config.join("unknown.txt").exists(),
-            "Top-level unknown file should be preserved"
-        );
-        assert_eq!(
-            fs::read_to_string(live_config.join("unknown.txt")).unwrap(),
-            "precious data"
+            !live_config.join("extra.txt").exists(),
+            "Extra files should be removed on full replace"
         );
         assert!(
-            live_config.join("unknown-dir/nested.txt").exists(),
-            "Unknown directory with nested files should be preserved"
-        );
-        assert_eq!(
-            fs::read_to_string(live_config.join("unknown-dir/nested.txt")).unwrap(),
-            "nested precious"
+            !live_config.join("extra-dir").exists(),
+            "Extra directories should be removed on full replace"
         );
         assert!(
             live_config.join("known.txt").exists(),
-            "Profile content should still be applied"
+            "Profile content should be applied"
         );
     }
 
     #[test]
-    fn switch_preserves_files_inside_managed_dirs() {
+    fn save_to_profile_captures_everything() {
         let temp = TempDir::new().unwrap();
         let profiles_dir = temp.path().join("profiles");
         let live_config = temp.path().join("live_config");
         fs::create_dir_all(&live_config).unwrap();
 
-        let harness = MockHarness::new("test-preserves-nested", live_config.clone());
-        let manager = ProfileManager::new(profiles_dir);
+        let harness = MockHarness::new("test-save-all", live_config.clone());
+        let manager = ProfileManager::new(profiles_dir.clone());
 
-        fs::create_dir_all(live_config.join("plugins")).unwrap();
-        fs::write(live_config.join("plugins/managed.txt"), "from profile").unwrap();
-        let profile_a = ProfileName::new("profile-a").unwrap();
-        manager.create_from_current(&harness, &profile_a).unwrap();
+        fs::write(live_config.join("config.txt"), "config").unwrap();
+        fs::create_dir_all(live_config.join("runtime-dir/nested")).unwrap();
+        fs::write(live_config.join("runtime-dir/data.txt"), "runtime").unwrap();
+        fs::write(live_config.join("runtime-dir/nested/deep.txt"), "deep").unwrap();
 
-        fs::write(live_config.join("plugins/runtime-cache.db"), "runtime data").unwrap();
+        let profile = ProfileName::new("full-backup").unwrap();
+        manager.create_from_current(&harness, &profile).unwrap();
 
-        manager.switch_profile(&harness, &profile_a).unwrap();
-
-        assert!(
-            live_config.join("plugins/runtime-cache.db").exists(),
-            "Files inside managed dirs not in profile should be preserved"
-        );
+        let profile_path = profiles_dir.join("test-save-all/full-backup");
+        assert!(profile_path.join("config.txt").exists());
+        assert!(profile_path.join("runtime-dir/data.txt").exists());
+        assert!(profile_path.join("runtime-dir/nested/deep.txt").exists());
         assert_eq!(
-            fs::read_to_string(live_config.join("plugins/runtime-cache.db")).unwrap(),
-            "runtime data"
-        );
-        assert!(
-            live_config.join("plugins/managed.txt").exists(),
-            "Profile content should still be applied"
+            fs::read_to_string(profile_path.join("runtime-dir/nested/deep.txt")).unwrap(),
+            "deep"
         );
     }
 

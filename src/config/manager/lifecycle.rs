@@ -70,25 +70,20 @@ impl ProfileManager {
             if path.is_file() {
                 std::fs::remove_file(&path)?;
             } else if path.is_dir() {
-                let name = entry.file_name();
-                if [
-                    files::CANONICAL_COMMANDS_DIR,
-                    files::CANONICAL_AGENTS_DIR,
-                    files::CANONICAL_SKILLS_DIR,
-                    files::CANONICAL_PLUGINS_DIR,
-                ]
-                .iter()
-                .any(|&n| name == n)
-                {
-                    std::fs::remove_dir_all(&path)?;
-                }
+                std::fs::remove_dir_all(&path)?;
             }
         }
 
-        files::copy_config_files(harness, true, &profile_path)?;
-        if let Some(h) = harness_for_resources {
-            files::copy_resource_directories(h, true, &profile_path)?;
+        files::copy_all_contents(&source_dir, &profile_path)?;
+        if let Some(mcp_path) = harness.mcp_config_path()
+            && mcp_path.exists()
+            && mcp_path.is_file()
+            && let Some(filename) = mcp_path.file_name()
+        {
+            let dest = profile_path.join(filename);
+            std::fs::copy(&mcp_path, dest)?;
         }
+        let _ = harness_for_resources;
         Ok(())
     }
 
@@ -123,49 +118,32 @@ impl ProfileManager {
 
         let target_dir = harness.config_dir()?;
 
-        if !target_dir.exists() {
+        if target_dir.exists() {
+            for entry in std::fs::read_dir(&target_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_file() {
+                    std::fs::remove_file(&path)?;
+                } else if path.is_dir() {
+                    std::fs::remove_dir_all(&path)?;
+                }
+            }
+        } else {
             std::fs::create_dir_all(&target_dir)?;
         }
 
-        let mcp_path = harness.mcp_config_path();
-        let mcp_filename = mcp_path
-            .as_ref()
-            .and_then(|p| p.file_name().map(|n| n.to_os_string()));
+        files::copy_all_contents(&profile_path, &target_dir)?;
 
-        // SAFETY: Only sync items IN profile to target - preserves unmanaged files
-        for entry in std::fs::read_dir(&profile_path)? {
-            let entry = entry?;
-            let file_name = entry.file_name();
-            let file_type = entry.file_type()?;
-
-            if let Some(ref mcp_name) = mcp_filename
-                && file_name == *mcp_name
-            {
-                continue;
-            }
-
-            let source = entry.path();
-            let dest = target_dir.join(&file_name);
-
-            if file_type.is_file() {
-                std::fs::copy(&source, &dest)?;
-            } else if file_type.is_dir() {
-                files::copy_dir_filtered(&source, &dest)?;
-            }
-        }
-
-        if let Some(h) = harness_for_resources {
-            files::copy_resource_directories(h, false, &profile_path)?;
-        }
-
-        if let Some(ref mcp_name) = mcp_filename
-            && let Some(ref mcp_dest) = mcp_path
+        if let Some(mcp_path) = harness.mcp_config_path()
+            && let Some(filename) = mcp_path.file_name()
         {
-            let mcp_in_profile = profile_path.join(mcp_name);
+            let mcp_in_profile = profile_path.join(filename);
             if mcp_in_profile.exists() {
-                std::fs::copy(&mcp_in_profile, mcp_dest)?;
+                std::fs::copy(&mcp_in_profile, &mcp_path)?;
             }
         }
+
+        let _ = harness_for_resources;
 
         let mut config = BridleConfig::load().unwrap_or_default();
         config.set_active_profile(harness.id(), name.as_str());

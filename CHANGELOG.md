@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-01-03
+
+### Changed
+
+- **BREAKING**: Profile switching now provides full isolation
+- Profiles are completely independent - switching profiles replaces ALL files in live config
+- Current state is automatically saved to the old profile before switching (no data loss)
+
+### Fixed
+
+- Profile creation now sets the profile as active (enables proper save-before-switch)
+- All files and directories (including hidden/dotfiles) are captured in profiles
+
+### Migration
+
+Users upgrading from 0.2.2 should be aware that runtime state (todos, transcripts, etc.) 
+will now be profile-specific rather than shared across profiles.
+
 ## [0.2.2] - 2026-01-03
 
 ### Fixed
