@@ -13,8 +13,10 @@ use crate::harness::HarnessConfig;
 use crate::install::discovery::{DiscoveryError, discover_skills};
 use crate::install::installer::{install_agent, install_command, install_skills};
 use crate::install::{
-    AgentInfo, CommandInfo, DiscoveryResult, InstallOptions, InstallTarget, McpInfo, SkillInfo,
+    AgentInfo, CommandInfo, DiscoveryResult, InstallOptions, InstallTarget, SkillInfo,
 };
+use harness_locate::McpServer;
+use std::collections::HashMap;
 
 type TargetGroup = (
     String,
@@ -67,7 +69,7 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
 /// Selected components from the discovery result
 struct SelectedComponents {
     skills: Vec<SkillInfo>,
-    mcp_servers: Vec<McpInfo>,
+    mcp_servers: HashMap<String, McpServer>,
     agents: Vec<AgentInfo>,
     commands: Vec<CommandInfo>,
 }
@@ -209,10 +211,10 @@ pub fn run(source: &str, force: bool) -> Result<()> {
         }
 
         // TODO: Install MCP servers when installer is implemented
-        for mcp in &selected.mcp_servers {
+        for (name, _server) in &selected.mcp_servers {
             eprintln!(
                 "  ~ MCP server: {} (installer not yet implemented)",
-                mcp.name
+                name
             );
         }
     }
@@ -233,11 +235,7 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     }
 
     if !discovery.mcp_servers.is_empty() {
-        let names: Vec<String> = discovery
-            .mcp_servers
-            .iter()
-            .map(|m| m.name.clone())
-            .collect();
+        let names: Vec<String> = discovery.mcp_servers.keys().cloned().collect();
         let indices: Vec<usize> = (0..discovery.mcp_servers.len()).collect();
         groups.push(("MCP Servers", names, indices));
     }
@@ -257,7 +255,7 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     if groups.is_empty() {
         return Ok(SelectedComponents {
             skills: Vec::new(),
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             agents: Vec::new(),
             commands: Vec::new(),
         });
@@ -283,7 +281,7 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     let Some(selections) = group_select.interact_opt()? else {
         return Ok(SelectedComponents {
             skills: Vec::new(),
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             agents: Vec::new(),
             commands: Vec::new(),
         });
@@ -292,7 +290,7 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     // Map selections back to discovery items
     let mut selected = SelectedComponents {
         skills: Vec::new(),
-        mcp_servers: Vec::new(),
+        mcp_servers: HashMap::new(),
         agents: Vec::new(),
         commands: Vec::new(),
     };
@@ -306,10 +304,10 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
                 }
             }
             "MCP Servers" => {
+                let mcp_entries: Vec<_> = discovery.mcp_servers.iter().collect();
                 for &idx in selected_indices {
-                    selected
-                        .mcp_servers
-                        .push(discovery.mcp_servers[idx].clone());
+                    let (name, server) = mcp_entries[idx];
+                    selected.mcp_servers.insert(name.clone(), server.clone());
                 }
             }
             "Agents" => {

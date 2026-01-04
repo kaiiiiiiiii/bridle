@@ -2,10 +2,14 @@
 //!
 //! Wraps the `skills-locate` crate to discover installable skills.
 
+use std::collections::HashMap;
+
+use harness_locate::McpServer;
+use skills_locate::parse_mcp_json;
 use skills_locate::{GitHubRef, extract_file, fetch_bytes, list_files, parse_skill_descriptor};
 use thiserror::Error;
 
-use super::types::{AgentInfo, CommandInfo, DiscoveryResult, McpInfo, SkillInfo, SourceInfo};
+use super::types::{AgentInfo, CommandInfo, DiscoveryResult, SkillInfo, SourceInfo};
 
 #[derive(Debug, Error)]
 pub enum DiscoveryError {
@@ -56,14 +60,16 @@ pub fn discover_skills(url: &str) -> Result<DiscoveryResult, DiscoveryError> {
 
     let mcp_paths = list_files(&zip_bytes, ".mcp.json").map_err(DiscoveryError::FetchError)?;
 
-    let mut mcp_servers = Vec::new();
+    let mut mcp_servers: HashMap<String, McpServer> = HashMap::new();
     for path in mcp_paths {
         let content = match extract_file(&zip_bytes, &path) {
             Ok(c) => c,
             Err(_) => continue,
         };
 
-        mcp_servers.extend(parse_mcp_json(&content));
+        if let Ok(servers) = parse_mcp_json(&content) {
+            mcp_servers.extend(servers);
+        }
     }
 
     // Discover agents from AGENT.md files (legacy format)
@@ -158,76 +164,6 @@ pub fn discover_skills(url: &str) -> Result<DiscoveryResult, DiscoveryError> {
         commands,
         source,
     })
-}
-
-fn parse_mcp_json(content: &str) -> Vec<McpInfo> {
-    use serde::Deserialize;
-    use std::collections::HashMap;
-
-    #[derive(Deserialize)]
-    struct McpServerEntry {
-        #[serde(default)]
-        command: Option<String>,
-        #[serde(default)]
-        args: Vec<String>,
-        #[serde(default)]
-        env: HashMap<String, String>,
-        #[serde(rename = "type")]
-        server_type: Option<String>,
-        url: Option<String>,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum McpFormat {
-        Wrapper {
-            #[serde(rename = "mcpServers")]
-            mcp_servers: HashMap<String, McpServerEntry>,
-        },
-        Single {
-            name: Option<String>,
-            description: Option<String>,
-            command: String,
-            #[serde(default)]
-            args: Vec<String>,
-            #[serde(default)]
-            env: HashMap<String, String>,
-        },
-    }
-
-    let parsed: McpFormat = match serde_json::from_str(content) {
-        Ok(p) => p,
-        Err(_) => return Vec::new(),
-    };
-
-    match parsed {
-        McpFormat::Wrapper { mcp_servers } => mcp_servers
-            .into_iter()
-            .filter_map(|(name, entry)| {
-                let command = entry.command.or(entry.url)?;
-                Some(McpInfo {
-                    name,
-                    description: None,
-                    command,
-                    args: entry.args,
-                    env: entry.env,
-                })
-            })
-            .collect(),
-        McpFormat::Single {
-            name,
-            description,
-            command,
-            args,
-            env,
-        } => vec![McpInfo {
-            name: name.unwrap_or_else(|| "unknown".to_string()),
-            description,
-            command,
-            args,
-            env,
-        }],
-    }
 }
 
 fn parse_agent_frontmatter(content: &str, path: &str) -> Option<(String, Option<String>)> {
@@ -326,26 +262,17 @@ mod tests {
                 "web": {"type": "sse", "url": "https://example.com/mcp"}
             }
         }"#;
-        let servers = super::parse_mcp_json(content);
+        let servers = skills_locate::parse_mcp_json(content).unwrap();
         assert_eq!(servers.len(), 2);
-        assert!(servers.iter().any(|s| s.name == "filesystem"));
-        assert!(servers.iter().any(|s| s.name == "web"));
+        assert!(servers.contains_key("filesystem"));
+        assert!(servers.contains_key("web"));
     }
 
     #[test]
-    fn parse_mcp_single_format() {
-        let content = r#"{"name": "test", "command": "node", "args": ["server.js"]}"#;
-        let servers = super::parse_mcp_json(content);
-        assert_eq!(servers.len(), 1);
-        assert_eq!(servers[0].name, "test");
-        assert_eq!(servers[0].command, "node");
-    }
-
-    #[test]
-    fn parse_mcp_malformed_returns_empty() {
+    fn parse_mcp_malformed_returns_error() {
         let content = "not valid json";
-        let servers = super::parse_mcp_json(content);
-        assert!(servers.is_empty());
+        let result = skills_locate::parse_mcp_json(content);
+        assert!(result.is_err());
     }
 
     #[test]
