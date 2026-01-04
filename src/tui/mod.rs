@@ -405,6 +405,13 @@ impl App {
         let (program, args) = self.bridle_config.editor_command();
 
         let _ = restore_terminal_for_editor();
+        
+        // Clear screen and show message while editor is open
+        print!("\x1B[2J\x1B[H");  // Clear screen, move cursor to top-left
+        println!("Editing profile: {}", profile.name);
+        println!("Close the editor to return to bridle.\n");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        
         let status = std::process::Command::new(&program)
             .args(&args)
             .arg(&profile_path)
