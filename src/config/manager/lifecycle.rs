@@ -43,7 +43,7 @@ impl ProfileManager {
         Ok(backup_path)
     }
 
-    pub(super) fn save_to_profile(
+    pub fn save_to_profile(
         &self,
         harness: &dyn HarnessConfig,
         harness_for_resources: Option<&Harness>,

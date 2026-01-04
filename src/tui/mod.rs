@@ -176,7 +176,20 @@ impl App {
         }
     }
 
+    fn sync_active_profiles(&mut self) {
+        for &kind in &self.harnesses {
+            let harness = Harness::new(kind);
+            let harness_id = harness.id();
+            if let Some(active_name) = self.bridle_config.active_profile_for(harness_id) {
+                if let Ok(profile_name) = ProfileName::new(active_name) {
+                    let _ = self.manager.save_to_profile(&harness, Some(&harness), &profile_name);
+                }
+            }
+        }
+    }
+
     fn refresh_profiles(&mut self) {
+        self.sync_active_profiles();
         self.profiles.clear();
         self.profile_state.select(None);
         self.profile_table_state.select(None);
@@ -387,10 +400,11 @@ impl App {
         };
 
         let profile_path = self.manager.profile_path(&harness, &profile_name);
-        let editor = self.bridle_config.editor();
+        let (program, args) = self.bridle_config.editor_command();
 
         let _ = restore_terminal_for_editor();
-        let status = std::process::Command::new(&editor)
+        let status = std::process::Command::new(&program)
+            .args(&args)
             .arg(&profile_path)
             .status();
         let _ = reinit_terminal_after_editor();

@@ -37,6 +37,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # TUI
 ratatui = "0.29"
 crossterm = "0.28"
+colored = "3.0.0"
 
 [features]
 default = []
@@ -51,3 +52,8 @@ predicates = "3.1"
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+# Local development overrides (ignored by cargo publish)
+[patch.crates-io]
+harness-locate = { path = "../harness-locate/crates/harness-locate" }
+skills-locate = { path = "../harness-locate/crates/skills-locate" }

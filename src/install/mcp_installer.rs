@@ -102,9 +102,25 @@ pub fn install_mcp_to_dir(
         });
     }
 
-    let config_path = get_profile_config_path(&profile_dir, kind);
+    let profile_config_path = get_profile_config_path(&profile_dir, kind);
 
-    if !options.force && mcp_exists(kind, &config_path, name).unwrap_or(false) {
+    let config = BridleConfig::load().ok();
+    let is_active = config
+        .as_ref()
+        .and_then(|c| c.active_profile_for(&target.harness))
+        .map(|active| active == target.profile.as_str())
+        .unwrap_or(false);
+
+    let check_path = if is_active {
+        Harness::locate(kind)
+            .ok()
+            .and_then(|h| h.mcp_config_path())
+            .unwrap_or_else(|| profile_config_path.clone())
+    } else {
+        profile_config_path.clone()
+    };
+
+    if !options.force && mcp_exists(kind, &check_path, name).unwrap_or(false) {
         return Ok(McpInstallOutcome::Skipped(McpInstallSkip {
             name: name.to_string(),
             target: target.clone(),
@@ -119,7 +135,7 @@ pub fn install_mcp_to_dir(
     let mut servers_to_write: HashMap<String, Value> = HashMap::new();
     servers_to_write.insert(name.to_string(), native_value);
 
-    write_mcp_config(kind, &config_path, &servers_to_write)
+    write_mcp_config(kind, &profile_config_path, &servers_to_write)
         .map_err(|e| InstallError::WriteFile(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
     let harness_path = write_mcp_to_harness_if_active(name, server, target, kind)?;
@@ -127,7 +143,7 @@ pub fn install_mcp_to_dir(
     Ok(McpInstallOutcome::Installed(McpInstallSuccess {
         name: name.to_string(),
         target: target.clone(),
-        profile_path: config_path,
+        profile_path: profile_config_path,
         harness_path,
     }))
 }

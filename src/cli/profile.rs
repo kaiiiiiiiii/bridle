@@ -143,8 +143,9 @@ pub fn edit_profile(harness_name: &str, profile_name: &str) -> Result<()> {
     }
 
     let config = crate::config::BridleConfig::load().unwrap_or_default();
-    let editor = config.editor();
-    let status = std::process::Command::new(&editor)
+    let (program, args) = config.editor_command();
+    let status = std::process::Command::new(&program)
+        .args(&args)
         .arg(&profile_path)
         .status()?;
 

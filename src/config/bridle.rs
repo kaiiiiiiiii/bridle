@@ -63,6 +63,18 @@ impl BridleConfig {
             .or_else(|| std::env::var("EDITOR").ok())
             .unwrap_or_else(|| "vi".to_string())
     }
+
+    /// Parse editor string into program and arguments.
+    ///
+    /// Handles commands like "code --wait" by splitting on whitespace.
+    /// Returns (program, args) tuple for use with `std::process::Command`.
+    pub fn editor_command(&self) -> (String, Vec<String>) {
+        let editor = self.editor();
+        let mut parts = editor.split_whitespace();
+        let program = parts.next().unwrap_or("vi").to_string();
+        let args: Vec<String> = parts.map(String::from).collect();
+        (program, args)
+    }
 }
 
 impl BridleConfig {
