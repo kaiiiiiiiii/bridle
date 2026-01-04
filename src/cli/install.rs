@@ -3,6 +3,7 @@
 use std::io::IsTerminal;
 
 use color_eyre::eyre::{Result, eyre};
+use colored::Colorize;
 use dialoguer_multiselect::theme::ColorfulTheme;
 use dialoguer_multiselect::{GroupMultiSelect, ItemState};
 
@@ -12,15 +13,19 @@ use crate::config::{BridleConfig, ProfileManager};
 use crate::harness::HarnessConfig;
 use crate::install::discovery::{DiscoveryError, discover_skills};
 use crate::install::installer::{install_agent, install_command, install_skills};
+use crate::install::mcp_installer::{McpInstallOutcome, install_mcp};
 use crate::install::{
-    AgentInfo, CommandInfo, DiscoveryResult, InstallOptions, InstallTarget, McpInfo, SkillInfo,
+    AgentInfo, CommandInfo, DiscoveryResult, InstallOptions, InstallTarget, SkillInfo,
 };
+use harness_locate::McpServer;
+use std::collections::HashMap;
 
 type TargetGroup = (
     String,
     Vec<(String, ItemState)>,
     Vec<InstallTarget>,
     Vec<bool>,
+    Option<String>, // Harness-level warning (e.g., "HTTP not supported")
 );
 
 fn harness_supports_skills(harness_id: &str) -> bool {
@@ -44,6 +49,13 @@ fn harness_supports_commands(harness_id: &str) -> bool {
         .is_some()
 }
 
+fn harness_supports_mcp(harness_id: &str) -> bool {
+    parse_harness_kind(harness_id)
+        .and_then(|kind| Harness::locate(kind).ok())
+        .and_then(|h| h.mcp_config_path())
+        .is_some()
+}
+
 fn count_incompatible_agents(agents: &[AgentInfo], kind: HarnessKind) -> usize {
     agents
         .iter()
@@ -52,6 +64,26 @@ fn count_incompatible_agents(agents: &[AgentInfo], kind: HarnessKind) -> usize {
             issues.iter().any(|i| i.severity == Severity::Error)
         })
         .count()
+}
+
+fn count_incompatible_mcps(mcps: &HashMap<String, McpServer>, kind: HarnessKind) -> usize {
+    mcps.values()
+        .filter(|server| server.validate_capabilities(kind).is_err())
+        .count()
+}
+
+fn get_incompatible_mcp_names(mcps: &HashMap<String, McpServer>, kind: HarnessKind) -> Vec<String> {
+    let mut names: Vec<String> = mcps
+        .iter()
+        .filter(|(_, server)| server.validate_capabilities(kind).is_err())
+        .map(|(name, _)| name.clone())
+        .collect();
+    names.sort();
+    names
+}
+
+fn is_mcp_compatible(server: &McpServer, kind: HarnessKind) -> bool {
+    server.validate_capabilities(kind).is_ok()
 }
 
 fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
@@ -67,7 +99,7 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
 /// Selected components from the discovery result
 struct SelectedComponents {
     skills: Vec<SkillInfo>,
-    mcp_servers: Vec<McpInfo>,
+    mcp_servers: HashMap<String, McpServer>,
     agents: Vec<AgentInfo>,
     commands: Vec<CommandInfo>,
 }
@@ -208,12 +240,39 @@ pub fn run(source: &str, force: bool) -> Result<()> {
             }
         }
 
-        // TODO: Install MCP servers when installer is implemented
-        for mcp in &selected.mcp_servers {
-            eprintln!(
-                "  ~ MCP server: {} (installer not yet implemented)",
-                mcp.name
-            );
+        // Install MCP servers
+        if !selected.mcp_servers.is_empty() && harness_supports_mcp(&target.harness) {
+            let harness_kind = parse_harness_kind(&target.harness);
+            for (name, server) in &selected.mcp_servers {
+                // Check transport compatibility before attempting installation
+                if let Some(kind) = harness_kind {
+                    if !is_mcp_compatible(server, kind) {
+                        let transport = match server {
+                            McpServer::Stdio(_) => "stdio",
+                            McpServer::Sse(_) => "SSE",
+                            McpServer::Http(_) => "HTTP",
+                        };
+                        eprintln!(
+                            "  ~ Skipping MCP server: {} ({} transport not supported by {})",
+                            name, transport, target.harness
+                        );
+                        continue;
+                    }
+                }
+                match install_mcp(name, server, &target, &options) {
+                    Ok(McpInstallOutcome::Installed(success)) => {
+                        eprintln!("  + Installed MCP server: {}", success.name);
+                    }
+                    Ok(McpInstallOutcome::Skipped(skip)) => {
+                        eprintln!("  = Skipped MCP server: {} ({:?})", skip.name, skip.reason);
+                    }
+                    Err(e) => {
+                        eprintln!("  ! Error installing MCP server {}: {}", name, e);
+                    }
+                }
+            }
+        } else if !selected.mcp_servers.is_empty() {
+            eprintln!("  ~ Skipping MCP servers (harness does not support MCP)");
         }
     }
 
@@ -233,11 +292,7 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     }
 
     if !discovery.mcp_servers.is_empty() {
-        let names: Vec<String> = discovery
-            .mcp_servers
-            .iter()
-            .map(|m| m.name.clone())
-            .collect();
+        let names: Vec<String> = discovery.mcp_servers.keys().cloned().collect();
         let indices: Vec<usize> = (0..discovery.mcp_servers.len()).collect();
         groups.push(("MCP Servers", names, indices));
     }
@@ -257,7 +312,7 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     if groups.is_empty() {
         return Ok(SelectedComponents {
             skills: Vec::new(),
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             agents: Vec::new(),
             commands: Vec::new(),
         });
@@ -283,7 +338,7 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     let Some(selections) = group_select.interact_opt()? else {
         return Ok(SelectedComponents {
             skills: Vec::new(),
-            mcp_servers: Vec::new(),
+            mcp_servers: HashMap::new(),
             agents: Vec::new(),
             commands: Vec::new(),
         });
@@ -292,7 +347,7 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
     // Map selections back to discovery items
     let mut selected = SelectedComponents {
         skills: Vec::new(),
-        mcp_servers: Vec::new(),
+        mcp_servers: HashMap::new(),
         agents: Vec::new(),
         commands: Vec::new(),
     };
@@ -306,10 +361,10 @@ fn select_components(discovery: &DiscoveryResult) -> Result<SelectedComponents> 
                 }
             }
             "MCP Servers" => {
+                let mcp_entries: Vec<_> = discovery.mcp_servers.iter().collect();
                 for &idx in selected_indices {
-                    selected
-                        .mcp_servers
-                        .push(discovery.mcp_servers[idx].clone());
+                    let (name, server) = mcp_entries[idx];
+                    selected.mcp_servers.insert(name.clone(), server.clone());
                 }
             }
             "Agents" => {
@@ -374,10 +429,15 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
         let can_install_skills = supports_skills && !selected.skills.is_empty();
         let can_install_agents = supports_agents && !selected.agents.is_empty();
         let can_install_commands = supports_commands && !selected.commands.is_empty();
-        let can_install_mcp = !selected.mcp_servers.is_empty(); // TODO: add harness MCP support check
+        let incompatible_mcp_count = count_incompatible_mcps(&selected.mcp_servers, *kind);
+        let compatible_mcp_count = selected.mcp_servers.len() - incompatible_mcp_count;
+        let can_install_mcp = compatible_mcp_count > 0;
+
+        // Claude Code MCP support is in development (no global MCP config support)
+        let claude_mcp_in_dev = *kind == HarnessKind::ClaudeCode && !selected.mcp_servers.is_empty();
 
         let can_install_anything =
-            can_install_skills || can_install_agents || can_install_commands || can_install_mcp;
+            can_install_skills || can_install_agents || can_install_commands || (can_install_mcp && !claude_mcp_in_dev);
 
         let mut skipped: Vec<&str> = Vec::new();
         if !selected.agents.is_empty() && !supports_agents {
@@ -405,11 +465,15 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
                 profile.to_string()
             };
 
-            let state = if !can_install_anything {
+            let state = if claude_mcp_in_dev {
+                ItemState::Disabled {
+                    reason: "MCP: in development".into(),
+                }
+            } else if !can_install_anything {
                 ItemState::Disabled {
                     reason: "no selected components supported".into(),
                 }
-            } else if !skipped.is_empty() || incompatible_agent_count > 0 {
+            } else if !skipped.is_empty() || incompatible_agent_count > 0 || incompatible_mcp_count > 0 {
                 let mut warnings: Vec<String> = Vec::new();
                 if !skipped.is_empty() {
                     warnings.push(format!("{} not supported", skipped.join(", ")));
@@ -418,6 +482,13 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
                     warnings.push(format!(
                         "{} agent(s) incompatible",
                         incompatible_agent_count
+                    ));
+                }
+                if incompatible_mcp_count > 0 {
+                    let names = get_incompatible_mcp_names(&selected.mcp_servers, *kind);
+                    warnings.push(format!(
+                        "{} incompatible",
+                        names.join(", ")
                     ));
                 }
                 ItemState::Warning {
@@ -437,7 +508,13 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
             defaults.push(default_selected);
         }
 
-        groups.push((harness_id.to_string(), items_with_states, targets, defaults));
+        let harness_warning = if incompatible_mcp_count > 0 {
+            let names = get_incompatible_mcp_names(&selected.mcp_servers, *kind);
+            Some(format!("{} incompatible", names.join(", ")))
+        } else {
+            None
+        };
+        groups.push((harness_id.to_string(), items_with_states, targets, defaults, harness_warning));
     }
 
     if groups.is_empty() {
@@ -446,7 +523,7 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
         ));
     }
 
-    let all_defaults: Vec<Vec<bool>> = groups.iter().map(|(_, _, _, d)| d.clone()).collect();
+    let all_defaults: Vec<Vec<bool>> = groups.iter().map(|(_, _, _, d, _)| d.clone()).collect();
 
     let theme = ColorfulTheme::default();
     let mut group_select = GroupMultiSelect::new()
@@ -454,8 +531,13 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
         .with_prompt("Select target profiles (Esc to cancel)")
         .defaults(all_defaults);
 
-    for (harness_id, items_with_states, _, _) in &groups {
-        group_select = group_select.group_with_states(harness_id, items_with_states.clone());
+    for (harness_id, items_with_states, _, _, harness_warning) in &groups {
+        let header = if let Some(warning) = harness_warning {
+            format!("{} {}", harness_id, format!("⚠ {}", warning).yellow())
+        } else {
+            harness_id.clone()
+        };
+        group_select = group_select.group_with_states(&header, items_with_states.clone());
     }
 
     let Some(selections) = group_select.interact_opt()? else {
@@ -464,7 +546,7 @@ fn select_targets(selected: &SelectedComponents) -> Result<Vec<InstallTarget>> {
 
     let mut selected_targets = Vec::new();
     for (group_idx, indices) in selections.iter().enumerate() {
-        let (_, _, targets, _) = &groups[group_idx];
+        let (_, _, targets, _, _) = &groups[group_idx];
         for &item_idx in indices {
             selected_targets.push(targets[item_idx].clone());
         }

@@ -1,7 +1,9 @@
 //! Types for installation operations.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
+use harness_locate::McpServer;
 use serde::Serialize;
 
 use crate::config::ProfileName;
@@ -17,16 +19,6 @@ pub struct SkillInfo {
     pub path: String,
     /// Actual SKILL.md file content
     pub content: String,
-}
-
-/// Information about a discovered MCP server
-#[derive(Debug, Clone)]
-pub struct McpInfo {
-    pub name: String,
-    pub description: Option<String>,
-    pub command: String,
-    pub args: Vec<String>,
-    pub env: std::collections::HashMap<String, String>,
 }
 
 /// Information about a discovered agent
@@ -67,8 +59,8 @@ pub struct InstallOptions {
 pub struct DiscoveryResult {
     /// Discovered skills
     pub skills: Vec<SkillInfo>,
-    /// Discovered MCP servers
-    pub mcp_servers: Vec<McpInfo>,
+    /// Discovered MCP servers (name -> server config)
+    pub mcp_servers: HashMap<String, McpServer>,
     /// Discovered agents
     pub agents: Vec<AgentInfo>,
     /// Discovered commands
@@ -112,7 +104,7 @@ pub struct InstallSkip {
     pub reason: SkipReason,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub enum SkipReason {
     /// File already exists and --force not specified
     AlreadyExists,

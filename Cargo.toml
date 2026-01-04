@@ -12,8 +12,8 @@ categories = ["command-line-utilities", "config", "development-tools"]
 authors = ["d0"]
 
 [dependencies]
-harness-locate = "0.2.7"
-skills-locate = "0.1.1"
+harness-locate = "0.3.1"
+skills-locate = "0.2.1"
 
 
 # CLI
@@ -37,6 +37,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # TUI
 ratatui = "0.29"
 crossterm = "0.28"
+colored = "3.0.0"
 
 [features]
 default = []
@@ -51,3 +52,5 @@ predicates = "3.1"
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+

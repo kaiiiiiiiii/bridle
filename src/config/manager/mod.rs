@@ -205,12 +205,15 @@ impl ProfileManager {
 
     /// Extracts and returns detailed information about a profile.
     ///
+    /// When a profile is active, reads from the live harness config directory
+    /// to reflect any manual edits the user may have made.
+    ///
     /// # Errors
     /// Returns [`Error::ProfileNotFound`] if profile doesn't exist.
     pub fn show_profile(&self, harness: &Harness, name: &ProfileName) -> Result<ProfileInfo> {
-        let path = self.profile_path(harness, name);
+        let profile_path = self.profile_path(harness, name);
 
-        if !path.exists() {
+        if !profile_path.exists() {
             return Err(Error::ProfileNotFound(name.as_str().to_string()));
         }
 
@@ -219,12 +222,15 @@ impl ProfileManager {
             .map(|c| c.active_profile_for(&harness_id) == Some(name.as_str()))
             .unwrap_or(false);
 
-        let theme = extraction::extract_theme(harness, &path);
-        let model = extraction::extract_model(harness, &path);
+        let live_harness_path = harness.config_dir().unwrap_or(profile_path.clone());
+        let extraction_path = if is_active { live_harness_path } else { profile_path.clone() };
+
+        let theme = extraction::extract_theme(harness, &extraction_path);
+        let model = extraction::extract_model(harness, &extraction_path);
 
         let mut extraction_errors = Vec::new();
 
-        let mcp_servers = match extraction::extract_mcp_servers(harness, &path) {
+        let mcp_servers = match extraction::extract_mcp_servers(harness, &extraction_path) {
             Ok(servers) => servers,
             Err(e) => {
                 extraction_errors.push(format!("MCP config: {}", e));
@@ -232,27 +238,27 @@ impl ProfileManager {
             }
         };
 
-        let (skills, err) = extraction::extract_skills(harness, &path);
+        let (skills, err) = extraction::extract_skills(harness, &extraction_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (commands, err) = extraction::extract_commands(harness, &path);
+        let (commands, err) = extraction::extract_commands(harness, &extraction_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (plugins, err) = extraction::extract_plugins(harness, &path);
+        let (plugins, err) = extraction::extract_plugins(harness, &extraction_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (agents, err) = extraction::extract_agents(harness, &path);
+        let (agents, err) = extraction::extract_agents(harness, &extraction_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
 
-        let (rules_file, err) = extraction::extract_rules_file(harness, &path);
+        let (rules_file, err) = extraction::extract_rules_file(harness, &extraction_path);
         if let Some(e) = err {
             extraction_errors.push(e);
         }
@@ -261,7 +267,7 @@ impl ProfileManager {
             name: name.as_str().to_string(),
             harness_id,
             is_active,
-            path,
+            path: profile_path,
             mcp_servers,
             skills,
             commands,
