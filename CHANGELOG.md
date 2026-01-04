@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-01-04
+
+### Added
+
+- **MCP Installation System** - Full implementation of MCP server installation
+  - MCP config read/write helpers for all harnesses
+  - Core MCP installation function
+  - CLI integration for MCP installation
+  - YAML comment preservation for Goose config
+- Update harness-locate to 0.3 and skills-locate to 0.2
+- Integration tests for MCP installation
+- Issue templates and contributing guide
+
+### Fixed
+
+- Editor commands with arguments now work correctly (e.g., `code --wait`)
+- Terminal clears properly after GUI editor returns
+- Remove local path patches for CI compatibility
+- Bidirectional sync for configs
+
+### Changed
+
+- Claude Code MCP installation temporarily disabled (in development)
+
+### Improved
+
+- Show clean message while GUI editor is open
+
 ## [0.2.3] - 2026-01-03
 
 ### Changed
