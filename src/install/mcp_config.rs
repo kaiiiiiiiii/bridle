@@ -29,6 +29,7 @@ fn get_mcp_key(kind: HarnessKind) -> &'static str {
         HarnessKind::OpenCode => "mcp",
         HarnessKind::Goose => "extensions",
         HarnessKind::AmpCode => "amp.mcpServers",
+        HarnessKind::CopilotCli => "mcpServers",
         _ => "mcpServers",
     }
 }

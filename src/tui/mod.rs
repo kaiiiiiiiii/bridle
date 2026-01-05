@@ -43,6 +43,7 @@ fn harness_id(kind: &HarnessKind) -> &'static str {
         HarnessKind::OpenCode => "opencode",
         HarnessKind::Goose => "goose",
         HarnessKind::AmpCode => "amp-code",
+        HarnessKind::CopilotCli => "copilot-cli",
         _ => "unknown",
     }
 }
@@ -53,6 +54,7 @@ fn harness_name(kind: &HarnessKind) -> &'static str {
         HarnessKind::OpenCode => "OpenCode",
         HarnessKind::Goose => "Goose",
         HarnessKind::AmpCode => "AMP Code",
+        HarnessKind::CopilotCli => "Copilot CLI",
         _ => "Unknown",
     }
 }
@@ -182,17 +184,16 @@ impl App {
         for &kind in &self.harnesses {
             let harness = Harness::new(kind);
             let harness_id = harness.id();
-            if let Some(active_name) = self.bridle_config.active_profile_for(harness_id)
-                && let Ok(profile_name) = ProfileName::new(active_name)
-            {
-                let _ = self
-                    .manager
-                    .save_to_profile(&harness, Some(&harness), &profile_name);
+            if let Some(active_name) = self.bridle_config.active_profile_for(harness_id) {
+                if let Ok(profile_name) = ProfileName::new(active_name) {
+                    let _ = self.manager.save_to_profile(&harness, Some(&harness), &profile_name);
+                }
             }
         }
     }
 
     fn refresh_profiles(&mut self) {
+        self.sync_active_profiles();
         self.profiles.clear();
         self.profile_state.select(None);
         self.profile_table_state.select(None);
@@ -402,44 +403,20 @@ impl App {
             return;
         };
 
-        // For active profiles, edit the live harness config directly so changes take effect
-        // immediately. For inactive profiles, edit the profile directory (backup).
-        // This prevents sync_active_profiles() from overwriting user edits.
-        let edit_path = if profile.is_active {
-            match harness.config_dir() {
-                Ok(path) => path,
-                Err(e) => {
-                    self.status_message = Some(format!("Cannot get config dir: {}", e));
-                    return;
-                }
-            }
-        } else {
-            self.manager.profile_path(&harness, &profile_name)
-        };
+        let profile_path = self.manager.profile_path(&harness, &profile_name);
         let (program, args) = self.bridle_config.editor_command();
 
         let _ = restore_terminal_for_editor();
 
         // Clear screen and show message while editor is open
-        print!("\x1B[2J\x1B[H"); // Clear screen, move cursor to top-left
+        print!("\x1B[2J\x1B[H");  // Clear screen, move cursor to top-left
         println!("Editing profile: {}", profile.name);
         println!("Close the editor to return to bridle.\n");
         let _ = std::io::Write::flush(&mut std::io::stdout());
 
-        // On Windows, use cmd /c to invoke the editor so that .cmd/.bat wrappers
-        // (like VS Code's `code.cmd`) are resolved correctly.
-        #[cfg(windows)]
-        let status = std::process::Command::new("cmd")
-            .arg("/c")
-            .arg(&program)
-            .args(&args)
-            .arg(&edit_path)
-            .status();
-
-        #[cfg(not(windows))]
         let status = std::process::Command::new(&program)
             .args(&args)
-            .arg(&edit_path)
+            .arg(&profile_path)
             .status();
         let _ = reinit_terminal_after_editor();
         self.needs_full_redraw = true;
@@ -492,6 +469,11 @@ impl App {
             self.status_message = Some("Invalid profile name".to_string());
             return;
         };
+
+        if let Err(e) = self.manager.backup_current(&harness) {
+            self.status_message = Some(format!("Backup failed: {}", e));
+            return;
+        }
 
         match self
             .manager
@@ -611,9 +593,8 @@ impl App {
                 }
             }
             KeyCode::Char('r') => {
-                self.sync_active_profiles();
                 self.refresh_profiles();
-                self.status_message = Some("Synced and refreshed".to_string());
+                self.status_message = Some("Refreshed".to_string());
             }
             KeyCode::Char('n') => {
                 self.input_mode = InputMode::CreatingProfile;
@@ -1200,15 +1181,7 @@ pub fn run() -> Result<(), Error> {
         if event::poll(std::time::Duration::from_millis(100)).map_err(Error::Io)? {
             match event::read().map_err(Error::Io)? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    let is_ctrl_c = key.code == KeyCode::Char('c')
-                        && key
-                            .modifiers
-                            .contains(crossterm::event::KeyModifiers::CONTROL);
-                    if is_ctrl_c {
-                        app.running = false;
-                    } else {
-                        app.handle_key(key.code);
-                    }
+                    app.handle_key(key.code);
                 }
                 Event::Mouse(mouse) => {
                     app.handle_mouse(mouse);
@@ -1218,7 +1191,6 @@ pub fn run() -> Result<(), Error> {
         }
     }
 
-    app.sync_active_profiles();
     restore_terminal(&mut terminal).map_err(Error::Io)?;
     Ok(())
 }

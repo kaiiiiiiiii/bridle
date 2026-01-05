@@ -20,6 +20,7 @@ fn resolve_harness(name: &str) -> Result<Harness> {
         "opencode" | "oc" => HarnessKind::OpenCode,
         "goose" => HarnessKind::Goose,
         "amp-code" | "amp" | "ampcode" => HarnessKind::AmpCode,
+        "copilot-cli" | "copilot" => HarnessKind::CopilotCli,
         _ => return Err(Error::UnknownHarness(name.to_string())),
     };
     Ok(Harness::new(kind))
