@@ -68,7 +68,7 @@ Keep them concise and descriptive:
 src/
 ├── cli/        # CLI commands and output
 ├── config/     # Configuration management
-├── harness/    # Harness definitions (claude, opencode, goose, amp)
+├── harness/    # Harness definitions (claude, opencode, goose, amp, copilot)
 ├── install/    # Skill discovery and installation
 └── tui/        # Terminal UI
 ```
