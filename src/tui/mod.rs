@@ -936,11 +936,6 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
     } else {
         "[ ]"
     };
-    let checkbox_text = if app.create_profile_copy_current {
-        " Copy from current config"
-    } else {
-        " Empty profile (do not copy)"
-    };
     let checkbox_focus_style = if app.create_profile_focused_on_checkbox {
         Style::default()
             .fg(Color::Yellow)
@@ -948,8 +943,8 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    let checkbox =
-        Paragraph::new(format!("{} {}", checkbox_mark, checkbox_text)).style(checkbox_focus_style);
+    let checkbox = Paragraph::new(format!("{checkbox_mark} Copy from current config"))
+        .style(checkbox_focus_style);
 
     frame.render_widget(checkbox, checkbox_area);
 }
