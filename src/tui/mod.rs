@@ -37,6 +37,15 @@ use widgets::{DetailPane, HarnessTabs, ProfileTable, StatusBar};
 
 type Tui = Terminal<CrosstermBackend<Stdout>>;
 
+const CREATE_PROFILE_POPUP_WIDTH: u16 = 60;
+const CREATE_PROFILE_POPUP_HEIGHT_NO_ERROR: u16 = 11;
+const CREATE_PROFILE_POPUP_HEIGHT_WITH_ERROR: u16 = 13;
+const CREATE_PROFILE_POPUP_INPUT_HEIGHT: u16 = 3;
+const CREATE_PROFILE_POPUP_CHECKBOX_HEIGHT: u16 = 1;
+const CREATE_PROFILE_POPUP_ERROR_HEIGHT: u16 = 1;
+const CREATE_PROFILE_POPUP_ERROR_SPACER: u16 = 1;
+const CREATE_PROFILE_POPUP_TIPS_HEIGHT: u16 = 1;
+
 fn harness_id(kind: &HarnessKind) -> &'static str {
     match kind {
         HarnessKind::ClaudeCode => "claude-code",
@@ -89,6 +98,9 @@ struct App {
     show_help: bool,
     input_mode: InputMode,
     input_buffer: String,
+    create_profile_copy_current: bool,
+    create_profile_focused_on_checkbox: bool,
+    create_profile_error: Option<String>,
     needs_full_redraw: bool,
     detail_scroll: u16,
     detail_content_height: u16,
@@ -131,6 +143,9 @@ impl App {
             show_help: false,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
+            create_profile_copy_current: true,
+            create_profile_focused_on_checkbox: false,
+            create_profile_error: None,
             needs_full_redraw: false,
             detail_scroll: 0,
             detail_content_height: 0,
@@ -621,9 +636,7 @@ impl App {
                 self.status_message = Some("Refreshed".to_string());
             }
             KeyCode::Char('n') => {
-                self.input_mode = InputMode::CreatingProfile;
-                self.input_buffer.clear();
-                self.status_message = Some("Enter profile name (Esc to cancel)".to_string());
+                self.reset_create_profile_state();
             }
             KeyCode::Char('d') => {
                 if (matches!(self.view_mode, ViewMode::Dashboard)
@@ -663,16 +676,20 @@ impl App {
     fn handle_input_key(&mut self, key: KeyCode) {
         match key {
             KeyCode::Enter => self.create_profile_from_input(),
-            KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-                self.input_buffer.clear();
-                self.status_message = None;
+            KeyCode::Esc => self.cancel_create_profile(),
+            KeyCode::Tab => {
+                self.create_profile_focused_on_checkbox = !self.create_profile_focused_on_checkbox;
+            }
+            KeyCode::Char(' ') if self.create_profile_focused_on_checkbox => {
+                self.create_profile_copy_current = !self.create_profile_copy_current;
             }
             KeyCode::Backspace => {
                 self.input_buffer.pop();
+                self.clear_create_profile_error();
             }
             KeyCode::Char(c) => {
                 self.input_buffer.push(c);
+                self.clear_create_profile_error();
             }
             _ => {}
         }
@@ -694,17 +711,33 @@ impl App {
         }
     }
 
+    fn reset_create_profile_state(&mut self) {
+        self.input_mode = InputMode::CreatingProfile;
+        self.input_buffer.clear();
+        self.create_profile_copy_current = true;
+        self.create_profile_focused_on_checkbox = false;
+        self.create_profile_error = None;
+    }
+
+    fn clear_create_profile_error(&mut self) {
+        self.create_profile_error = None;
+    }
+
+    fn cancel_create_profile(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.input_buffer.clear();
+        self.clear_create_profile_error();
+    }
+
     fn create_profile_from_input(&mut self) {
         let name = self.input_buffer.trim().to_string();
         if name.is_empty() {
-            self.status_message = Some("Profile name cannot be empty".to_string());
+            self.create_profile_error = Some("Profile name cannot be empty".to_string());
             return;
         }
 
         let Some(kind) = self.selected_harness() else {
-            self.status_message = Some("No harness selected".to_string());
-            self.input_mode = InputMode::Normal;
-            self.input_buffer.clear();
+            self.create_profile_error = Some("No harness selected".to_string());
             return;
         };
 
@@ -712,27 +745,28 @@ impl App {
         let profile_name = match ProfileName::new(&name) {
             Ok(pn) => pn,
             Err(_) => {
-                self.status_message = Some("Invalid profile name".to_string());
+                self.create_profile_error = Some("Invalid profile name".to_string());
                 return;
             }
         };
 
-        match self.manager.create_from_current_with_resources(
-            &harness,
-            Some(&harness),
-            &profile_name,
-        ) {
+        let result = if self.create_profile_copy_current {
+            self.manager
+                .create_from_current_with_resources(&harness, Some(&harness), &profile_name)
+        } else {
+            self.manager.create_profile(&harness, &profile_name)
+        };
+
+        match result {
             Ok(_) => {
                 self.status_message = Some(format!("Created profile '{}'", name));
                 self.refresh_profiles();
+                self.cancel_create_profile();
             }
             Err(e) => {
-                self.status_message = Some(format!("Failed: {}", e));
+                self.create_profile_error = Some(format!("Failed: {}", e));
             }
         }
-
-        self.input_mode = InputMode::Normal;
-        self.input_buffer.clear();
     }
 }
 
@@ -863,8 +897,12 @@ fn render_confirm_delete_popup(frame: &mut Frame, app: &App) {
 
 fn render_input_popup(frame: &mut Frame, app: &App) {
     let area = frame.area();
-    let popup_width = 50.min(area.width.saturating_sub(4));
-    let popup_height = 3;
+    let popup_width = CREATE_PROFILE_POPUP_WIDTH.min(area.width.saturating_sub(4));
+    let popup_height = if app.create_profile_error.is_some() {
+        CREATE_PROFILE_POPUP_HEIGHT_WITH_ERROR
+    } else {
+        CREATE_PROFILE_POPUP_HEIGHT_NO_ERROR
+    };
     let popup_x = (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = (area.height.saturating_sub(popup_height)) / 2;
 
@@ -872,17 +910,112 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
 
     frame.render_widget(Clear, popup_area);
 
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Create New Profile ")
+        .border_style(Style::default().fg(Color::Yellow));
+    frame.render_widget(block.clone(), popup_area);
+
+    let inner_area = block.inner(popup_area);
+
+    let chunks = create_profile_popup_chunks(app, inner_area);
+
+    render_create_profile_input_field(frame, app, chunks[0]);
+    render_create_profile_checkbox(frame, app, chunks[1]);
+
+    let mut current_idx = 3;
+
+    if let Some(error) = &app.create_profile_error {
+        render_create_profile_error(frame, error, chunks[current_idx]);
+        current_idx += 2;
+    }
+
+    render_create_profile_tips(frame, app, chunks[current_idx]);
+}
+
+fn create_profile_popup_chunks(app: &App, inner_area: Rect) -> Vec<Rect> {
+    let mut constraints = vec![
+        Constraint::Length(CREATE_PROFILE_POPUP_INPUT_HEIGHT),
+        Constraint::Length(CREATE_PROFILE_POPUP_CHECKBOX_HEIGHT),
+        Constraint::Min(1),
+    ];
+
+    if app.create_profile_error.is_some() {
+        constraints.push(Constraint::Length(CREATE_PROFILE_POPUP_ERROR_HEIGHT));
+        constraints.push(Constraint::Length(CREATE_PROFILE_POPUP_ERROR_SPACER));
+    }
+
+    constraints.push(Constraint::Length(CREATE_PROFILE_POPUP_TIPS_HEIGHT));
+
+    Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints(constraints)
+        .split(inner_area)
+        .to_vec()
+}
+
+fn render_create_profile_input_field(frame: &mut Frame, app: &App, area: Rect) {
     let input_text = format!("{}█", app.input_buffer);
+    let input_style = if app.create_profile_focused_on_checkbox {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::Yellow)
+    };
     let input = Paragraph::new(input_text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow))
-                .title(" New Profile Name (Enter to create, Esc to cancel) "),
+                .title(" Profile Name ")
+                .border_style(input_style),
         )
         .style(Style::default().fg(Color::White));
 
-    frame.render_widget(input, popup_area);
+    frame.render_widget(input, area);
+}
+
+fn render_create_profile_checkbox(frame: &mut Frame, app: &App, area: Rect) {
+    let checkbox_mark = if app.create_profile_copy_current { "[x]" } else { "[ ]" };
+    let checkbox_style = if app.create_profile_focused_on_checkbox {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let checkbox =
+        Paragraph::new(format!("  {checkbox_mark} Copy from current config")).style(checkbox_style);
+
+    frame.render_widget(checkbox, area);
+}
+
+fn render_create_profile_error(frame: &mut Frame, error: &str, area: Rect) {
+    let error_para = Paragraph::new(format!("Error: {}", error))
+        .style(Style::default().fg(Color::Red))
+        .alignment(Alignment::Center);
+    frame.render_widget(error_para, area);
+}
+
+fn render_create_profile_tips(frame: &mut Frame, app: &App, area: Rect) {
+    let mut tip_spans = vec![
+        Span::styled("Tab", Style::default().fg(Color::Cyan)),
+        Span::raw(" Switch  "),
+        Span::styled("Enter", Style::default().fg(Color::Green)),
+        Span::raw(" Create  "),
+        Span::styled("Esc", Style::default().fg(Color::Red)),
+        Span::raw(" Cancel"),
+    ];
+
+    if app.create_profile_focused_on_checkbox {
+        tip_spans.push(Span::raw("  "));
+        tip_spans.push(Span::styled("Space", Style::default().fg(Color::Magenta)));
+        tip_spans.push(Span::raw(" Toggle"));
+    }
+
+    let tips = Line::from(tip_spans);
+    let tips_para = Paragraph::new(tips).alignment(Alignment::Center);
+
+    frame.render_widget(tips_para, area);
 }
 
 fn render_profile_table(frame: &mut Frame, app: &mut App, area: Rect) {
