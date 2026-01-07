@@ -903,8 +903,8 @@ fn render_confirm_delete_popup(frame: &mut Frame, app: &App) {
 
 fn render_input_popup(frame: &mut Frame, app: &App) {
     let area = frame.area();
-    let popup_width = 53.min(area.width.saturating_sub(4));
-    let popup_height = 6;
+    let popup_width = 60.min(area.width.saturating_sub(4));
+    let popup_height = 11;
     let popup_x = (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = (area.height.saturating_sub(popup_height)) / 2;
 
@@ -912,8 +912,27 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
 
     frame.render_widget(Clear, popup_area);
 
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Create New Profile ")
+        .border_style(Style::default().fg(Color::Yellow));
+    frame.render_widget(block.clone(), popup_area);
+
+    let inner_area = block.inner(popup_area);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(3), // Input
+            Constraint::Length(1), // Checkbox
+            Constraint::Min(1),    // Spacer
+            Constraint::Length(1), // Tips
+        ])
+        .split(inner_area);
+
+    // Input field
     let input_text = format!("{}█", app.input_buffer);
-    let input_focus_style = if app.create_profile_focused_on_checkbox {
+    let input_style = if app.create_profile_focused_on_checkbox {
         Style::default().fg(Color::DarkGray)
     } else {
         Style::default().fg(Color::Yellow)
@@ -922,31 +941,51 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(input_focus_style)
-                .title(" New Profile Name (Enter to create, Esc to cancel) "),
+                .title(" Profile Name ")
+                .border_style(input_style),
         )
         .style(Style::default().fg(Color::White));
 
-    frame.render_widget(input, popup_area);
+    frame.render_widget(input, chunks[0]);
 
-    let checkbox_area = Rect::new(popup_area.x + 2, popup_area.y + 3, popup_area.width - 4, 2);
-
+    // Checkbox
     let checkbox_mark = if app.create_profile_copy_current {
         "[x]"
     } else {
         "[ ]"
     };
-    let checkbox_focus_style = if app.create_profile_focused_on_checkbox {
+    let checkbox_style = if app.create_profile_focused_on_checkbox {
         Style::default()
             .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };
-    let checkbox = Paragraph::new(format!("{checkbox_mark} Copy from current config"))
-        .style(checkbox_focus_style);
+    let checkbox =
+        Paragraph::new(format!(" {checkbox_mark} Copy from current config")).style(checkbox_style);
 
-    frame.render_widget(checkbox, checkbox_area);
+    frame.render_widget(checkbox, chunks[1]);
+
+    // Tips - context sensitive
+    let mut tip_spans = vec![
+        Span::styled("Tab", Style::default().fg(Color::Cyan)),
+        Span::raw(" Switch  "),
+        Span::styled("Enter", Style::default().fg(Color::Green)),
+        Span::raw(" Create  "),
+        Span::styled("Esc", Style::default().fg(Color::Red)),
+        Span::raw(" Cancel"),
+    ];
+
+    if app.create_profile_focused_on_checkbox {
+        tip_spans.push(Span::raw("  "));
+        tip_spans.push(Span::styled("Space", Style::default().fg(Color::Magenta)));
+        tip_spans.push(Span::raw(" Toggle"));
+    }
+
+    let tips = Line::from(tip_spans);
+    let tips_para = Paragraph::new(tips).alignment(Alignment::Center);
+
+    frame.render_widget(tips_para, chunks[3]);
 }
 
 fn render_profile_table(frame: &mut Frame, app: &mut App, area: Rect) {
