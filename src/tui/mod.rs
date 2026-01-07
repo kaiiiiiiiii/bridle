@@ -91,6 +91,8 @@ struct App {
     show_help: bool,
     input_mode: InputMode,
     input_buffer: String,
+    create_profile_copy_current: bool,
+    create_profile_focused_on_checkbox: bool,
     needs_full_redraw: bool,
     detail_scroll: u16,
     detail_content_height: u16,
@@ -133,6 +135,8 @@ impl App {
             show_help: false,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
+            create_profile_copy_current: true,
+            create_profile_focused_on_checkbox: false,
             needs_full_redraw: false,
             detail_scroll: 0,
             detail_content_height: 0,
@@ -613,6 +617,8 @@ impl App {
                     Ok(InstallationStatus::FullyInstalled { .. }) => {
                         self.input_mode = InputMode::CreatingProfile;
                         self.input_buffer.clear();
+                        self.create_profile_copy_current = true;
+                        self.create_profile_focused_on_checkbox = false;
                         self.status_message =
                             Some("Enter profile name (Esc to cancel)".to_string());
                     }
@@ -664,6 +670,16 @@ impl App {
                 self.input_mode = InputMode::Normal;
                 self.input_buffer.clear();
                 self.status_message = None;
+            }
+            KeyCode::Tab => {
+                self.create_profile_focused_on_checkbox = !self.create_profile_focused_on_checkbox;
+            }
+            KeyCode::Char(' ') => {
+                if self.create_profile_focused_on_checkbox {
+                    self.create_profile_copy_current = !self.create_profile_copy_current;
+                } else {
+                    self.input_buffer.push(' ');
+                }
             }
             KeyCode::Backspace => {
                 self.input_buffer.pop();
@@ -725,11 +741,14 @@ impl App {
             }
         };
 
-        match self.manager.create_from_current_with_resources(
-            &harness,
-            Some(&harness),
-            &profile_name,
-        ) {
+        let result = if self.create_profile_copy_current {
+            self.manager
+                .create_from_current_with_resources(&harness, Some(&harness), &profile_name)
+        } else {
+            self.manager.create_profile(&harness, &profile_name)
+        };
+
+        match result {
             Ok(_) => {
                 self.status_message = Some(format!("Created profile '{}'", name));
                 self.refresh_profiles();
@@ -872,7 +891,7 @@ fn render_confirm_delete_popup(frame: &mut Frame, app: &App) {
 fn render_input_popup(frame: &mut Frame, app: &App) {
     let area = frame.area();
     let popup_width = 50.min(area.width.saturating_sub(4));
-    let popup_height = 3;
+    let popup_height = 6;
     let popup_x = (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = (area.height.saturating_sub(popup_height)) / 2;
 
@@ -881,16 +900,45 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
     frame.render_widget(Clear, popup_area);
 
     let input_text = format!("{}█", app.input_buffer);
+    let input_focus_style = if app.create_profile_focused_on_checkbox {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default().fg(Color::Yellow)
+    };
     let input = Paragraph::new(input_text)
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow))
+                .border_style(input_focus_style)
                 .title(" New Profile Name (Enter to create, Esc to cancel) "),
         )
         .style(Style::default().fg(Color::White));
 
     frame.render_widget(input, popup_area);
+
+    let checkbox_area = Rect::new(popup_area.x + 2, popup_area.y + 3, popup_area.width - 4, 2);
+
+    let checkbox_mark = if app.create_profile_copy_current {
+        "[x]"
+    } else {
+        "[ ]"
+    };
+    let checkbox_text = if app.create_profile_copy_current {
+        " Copy from current config"
+    } else {
+        " Empty profile (do not copy)"
+    };
+    let checkbox_focus_style = if app.create_profile_focused_on_checkbox {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+    let checkbox =
+        Paragraph::new(format!("{} {}", checkbox_mark, checkbox_text)).style(checkbox_focus_style);
+
+    frame.render_widget(checkbox, checkbox_area);
 }
 
 fn render_profile_table(frame: &mut Frame, app: &mut App, area: Rect) {
