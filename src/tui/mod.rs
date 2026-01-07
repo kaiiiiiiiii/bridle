@@ -223,6 +223,20 @@ impl App {
         }
     }
 
+    fn start_create_profile(&mut self) {
+        self.input_mode = InputMode::CreatingProfile;
+        self.input_buffer.clear();
+        self.create_profile_copy_current = true;
+        self.create_profile_focused_on_checkbox = false;
+        self.status_message = Some("Enter profile name (Esc to cancel)".to_string());
+    }
+
+    fn exit_create_profile(&mut self) {
+        self.input_mode = InputMode::Normal;
+        self.input_buffer.clear();
+        self.create_profile_focused_on_checkbox = false;
+    }
+
     fn next_harness(&mut self) {
         let i = match self.harness_state.selected() {
             Some(i) => (i + 1) % self.harnesses.len(),
@@ -625,11 +639,7 @@ impl App {
                 self.status_message = Some("Refreshed".to_string());
             }
             KeyCode::Char('n') => {
-                self.input_mode = InputMode::CreatingProfile;
-                self.input_buffer.clear();
-                self.create_profile_copy_current = true;
-                self.create_profile_focused_on_checkbox = false;
-                self.status_message = Some("Enter profile name (Esc to cancel)".to_string());
+                self.start_create_profile();
             }
             KeyCode::Char('d') => {
                 if (matches!(self.view_mode, ViewMode::Dashboard)
@@ -670,8 +680,7 @@ impl App {
         match key {
             KeyCode::Enter => self.create_profile_from_input(),
             KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-                self.input_buffer.clear();
+                self.exit_create_profile();
                 self.status_message = None;
             }
             KeyCode::Tab => {
@@ -719,8 +728,7 @@ impl App {
 
         let Some(kind) = self.selected_harness() else {
             self.status_message = Some("No harness selected".to_string());
-            self.input_mode = InputMode::Normal;
-            self.input_buffer.clear();
+            self.exit_create_profile();
             return;
         };
 
@@ -750,8 +758,7 @@ impl App {
             }
         }
 
-        self.input_mode = InputMode::Normal;
-        self.input_buffer.clear();
+        self.exit_create_profile();
     }
 }
 
@@ -821,6 +828,13 @@ fn render_legacy_view(frame: &mut Frame, app: &mut App) {
     render_harness_pane(frame, app, main_chunks[0]);
     render_profile_pane(frame, app, main_chunks[1]);
     render_status_bar(frame, app, chunks[1]);
+
+    if app.input_mode == InputMode::CreatingProfile {
+        render_input_popup(frame, app);
+    }
+    if app.input_mode == InputMode::ConfirmingDelete {
+        render_confirm_delete_popup(frame, app);
+    }
 }
 
 fn render_dashboard_view(frame: &mut Frame, app: &mut App) {
@@ -882,7 +896,7 @@ fn render_confirm_delete_popup(frame: &mut Frame, app: &App) {
 
 fn render_input_popup(frame: &mut Frame, app: &App) {
     let area = frame.area();
-    let popup_width = 50.min(area.width.saturating_sub(4));
+    let popup_width = 53.min(area.width.saturating_sub(4));
     let popup_height = 6;
     let popup_x = (area.width.saturating_sub(popup_width)) / 2;
     let popup_y = (area.height.saturating_sub(popup_height)) / 2;
@@ -1056,16 +1070,6 @@ fn render_profile_pane(frame: &mut Frame, app: &mut App, area: Rect) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let (list_area, input_area) = if app.input_mode == InputMode::CreatingProfile {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(3)])
-            .split(area);
-        (chunks[0], Some(chunks[1]))
-    } else {
-        (area, None)
-    };
-
     if app.profiles.is_empty() && app.input_mode != InputMode::CreatingProfile {
         let message = app.empty_state_message();
         let block = Block::default()
@@ -1118,20 +1122,7 @@ fn render_profile_pane(frame: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_symbol("> ");
 
-    frame.render_stateful_widget(list, list_area, &mut app.profile_state);
-
-    if let Some(input_area) = input_area {
-        let input_text = format!("{}█", app.input_buffer);
-        let input = Paragraph::new(input_text)
-            .block(
-                Block::default()
-                    .title(" Profile name: ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Yellow)),
-            )
-            .style(Style::default().fg(Color::White));
-        frame.render_widget(input, input_area);
-    }
+    frame.render_stateful_widget(list, area, &mut app.profile_state);
 }
 
 fn render_help_modal(frame: &mut Frame, area: Rect, view_mode: views::ViewMode) {
