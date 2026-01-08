@@ -12,8 +12,8 @@ categories = ["command-line-utilities", "config", "development-tools"]
 authors = ["d0"]
 
 [dependencies]
-harness-locate = "0.3.1"
-skills-locate = "0.2.1"
+harness-locate = { path = "/Users/d0/Developer/harness-locate/crates/harness-locate" }
+skills-locate = { path = "/Users/d0/Developer/harness-locate/crates/skills-locate" }
 
 
 # CLI
