@@ -195,7 +195,6 @@ impl App {
     }
 
     fn refresh_profiles(&mut self) {
-        self.sync_active_profiles();
         self.profiles.clear();
         self.profile_state.select(None);
         self.profile_table_state.select(None);
@@ -405,7 +404,20 @@ impl App {
             return;
         };
 
-        let profile_path = self.manager.profile_path(&harness, &profile_name);
+        // For active profiles, edit the live harness config directly so changes take effect
+        // immediately. For inactive profiles, edit the profile directory (backup).
+        // This prevents sync_active_profiles() from overwriting user edits.
+        let edit_path = if profile.is_active {
+            match harness.config_dir() {
+                Ok(path) => path,
+                Err(e) => {
+                    self.status_message = Some(format!("Cannot get config dir: {}", e));
+                    return;
+                }
+            }
+        } else {
+            self.manager.profile_path(&harness, &profile_name)
+        };
         let (program, args) = self.bridle_config.editor_command();
 
         let _ = restore_terminal_for_editor();
@@ -416,9 +428,20 @@ impl App {
         println!("Close the editor to return to bridle.\n");
         let _ = std::io::Write::flush(&mut std::io::stdout());
 
+        // On Windows, use cmd /c to invoke the editor so that .cmd/.bat wrappers
+        // (like VS Code's `code.cmd`) are resolved correctly.
+        #[cfg(windows)]
+        let status = std::process::Command::new("cmd")
+            .arg("/c")
+            .arg(&program)
+            .args(&args)
+            .arg(&edit_path)
+            .status();
+
+        #[cfg(not(windows))]
         let status = std::process::Command::new(&program)
             .args(&args)
-            .arg(&profile_path)
+            .arg(&edit_path)
             .status();
         let _ = reinit_terminal_after_editor();
         self.needs_full_redraw = true;
@@ -471,11 +494,6 @@ impl App {
             self.status_message = Some("Invalid profile name".to_string());
             return;
         };
-
-        if let Err(e) = self.manager.backup_current(&harness) {
-            self.status_message = Some(format!("Backup failed: {}", e));
-            return;
-        }
 
         match self
             .manager
@@ -595,8 +613,9 @@ impl App {
                 }
             }
             KeyCode::Char('r') => {
+                self.sync_active_profiles();
                 self.refresh_profiles();
-                self.status_message = Some("Refreshed".to_string());
+                self.status_message = Some("Synced and refreshed".to_string());
             }
             KeyCode::Char('n') => {
                 self.input_mode = InputMode::CreatingProfile;
@@ -1183,7 +1202,15 @@ pub fn run() -> Result<(), Error> {
         if event::poll(std::time::Duration::from_millis(100)).map_err(Error::Io)? {
             match event::read().map_err(Error::Io)? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    app.handle_key(key.code);
+                    let is_ctrl_c = key.code == KeyCode::Char('c')
+                        && key
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::CONTROL);
+                    if is_ctrl_c {
+                        app.running = false;
+                    } else {
+                        app.handle_key(key.code);
+                    }
                 }
                 Event::Mouse(mouse) => {
                     app.handle_mouse(mouse);
@@ -1193,6 +1220,7 @@ pub fn run() -> Result<(), Error> {
         }
     }
 
+    app.sync_active_profiles();
     restore_terminal(&mut terminal).map_err(Error::Io)?;
     Ok(())
 }
