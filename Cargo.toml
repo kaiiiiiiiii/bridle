@@ -12,8 +12,8 @@ categories = ["command-line-utilities", "config", "development-tools"]
 authors = ["d0"]
 
 [dependencies]
-harness-locate = { path = "/Users/d0/Developer/harness-locate/crates/harness-locate" }
-skills-locate = { path = "/Users/d0/Developer/harness-locate/crates/skills-locate" }
+harness-locate = { git = "https://github.com/neiii/harness-barn", branch = "add-copilot-cli-harness" }
+skills-locate = { git = "https://github.com/neiii/harness-barn", branch = "add-copilot-cli-harness" }
 
 
 # CLI

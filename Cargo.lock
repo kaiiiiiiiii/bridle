@@ -725,6 +725,7 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 [[package]]
 name = "harness-locate"
 version = "0.3.0"
+source = "git+https://github.com/neiii/harness-barn?branch=add-copilot-cli-harness#22ae3ef2a282ae80cdc7f05f8ab099091ad512d0"
 dependencies = [
  "home",
  "regex",
@@ -1585,6 +1586,7 @@ checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 [[package]]
 name = "skills-locate"
 version = "0.2.0"
+source = "git+https://github.com/neiii/harness-barn?branch=add-copilot-cli-harness#22ae3ef2a282ae80cdc7f05f8ab099091ad512d0"
 dependencies = [
  "harness-locate",
  "serde",
