@@ -165,21 +165,6 @@ impl App {
         }
     }
 
-    fn empty_state_message(&self) -> &'static str {
-        let Some(kind) = self.selected_harness() else {
-            return "No harness selected";
-        };
-        let harness = Harness::new(kind);
-        match harness.installation_status() {
-            Ok(InstallationStatus::NotInstalled) => "Harness not installed",
-            Ok(InstallationStatus::BinaryOnly { .. }) => "Run harness once to generate config",
-            Ok(InstallationStatus::ConfigOnly { .. }) => "No binary found - reinstall harness",
-            Ok(InstallationStatus::FullyInstalled { .. }) => "Press 'n' to create a profile",
-            Ok(_) => "Press 'n' to create a profile",
-            Err(_) => "Unable to detect harness status",
-        }
-    }
-
     fn sync_active_profiles(&mut self) {
         for &kind in &self.harnesses {
             let harness = Harness::new(kind);
@@ -618,9 +603,24 @@ impl App {
                 self.status_message = Some("Synced and refreshed".to_string());
             }
             KeyCode::Char('n') => {
-                self.input_mode = InputMode::CreatingProfile;
-                self.input_buffer.clear();
-                self.status_message = Some("Enter profile name (Esc to cancel)".to_string());
+                let Some(kind) = self.selected_harness() else {
+                    self.status_message = Some("No harness selected".to_string());
+                    return;
+                };
+
+                let harness = Harness::new(kind);
+                match harness.installation_status() {
+                    Ok(InstallationStatus::FullyInstalled { .. }) => {
+                        self.input_mode = InputMode::CreatingProfile;
+                        self.input_buffer.clear();
+                        self.status_message =
+                            Some("Enter profile name (Esc to cancel)".to_string());
+                    }
+                    _ => {
+                        self.status_message =
+                            Some("Harness not installed — profiles disabled".to_string());
+                    }
+                }
             }
             KeyCode::Char('d') => {
                 if (matches!(self.view_mode, ViewMode::Dashboard)
@@ -706,6 +706,17 @@ impl App {
         };
 
         let harness = Harness::new(kind);
+
+        match harness.installation_status() {
+            Ok(InstallationStatus::FullyInstalled { .. }) => {}
+            _ => {
+                self.status_message = Some("Harness not installed — profiles disabled".to_string());
+                self.input_mode = InputMode::Normal;
+                self.input_buffer.clear();
+                return;
+            }
+        }
+
         let profile_name = match ProfileName::new(&name) {
             Ok(pn) => pn,
             Err(_) => {
@@ -883,6 +894,27 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
 }
 
 fn render_profile_table(frame: &mut Frame, app: &mut App, area: Rect) {
+    if app.profiles.is_empty() && app.input_mode != InputMode::CreatingProfile {
+        let Some(kind) = app.selected_harness() else {
+            let widget =
+                widgets::EmptyState::new("Profiles", vec!["No harness selected".to_string()])
+                    .focused(app.active_pane == Pane::Profiles);
+            frame.render_widget(widget, area);
+            return;
+        };
+
+        let harness = Harness::new(kind);
+        let status = harness
+            .installation_status()
+            .unwrap_or(InstallationStatus::NotInstalled);
+        let lines = crate::harness::get_empty_state_message(kind, status, false);
+
+        let widget =
+            widgets::EmptyState::new("Profiles", lines).focused(app.active_pane == Pane::Profiles);
+        frame.render_widget(widget, area);
+        return;
+    }
+
     let table = ProfileTable::new(&app.profiles).focused(app.active_pane == Pane::Profiles);
     frame.render_stateful_widget(table, area, &mut app.profile_table_state);
 }
@@ -1016,21 +1048,22 @@ fn render_profile_pane(frame: &mut Frame, app: &mut App, area: Rect) {
     };
 
     if app.profiles.is_empty() && app.input_mode != InputMode::CreatingProfile {
-        let message = app.empty_state_message();
-        let block = Block::default()
-            .title(match app.selected_harness() {
-                Some(kind) => format!(" Profiles ({:?}) ", kind),
-                None => " Profiles ".to_string(),
-            })
-            .borders(Borders::ALL)
-            .border_style(border_style);
-        frame.render_widget(block, area);
+        let Some(kind) = app.selected_harness() else {
+            let widget =
+                widgets::EmptyState::new("Profiles", vec!["No harness selected".to_string()])
+                    .focused(is_active);
+            frame.render_widget(widget, list_area);
+            return;
+        };
 
-        let inner = area.inner(ratatui::layout::Margin::new(2, 2));
-        let paragraph = Paragraph::new(message)
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(paragraph, inner);
+        let harness = Harness::new(kind);
+        let status = harness
+            .installation_status()
+            .unwrap_or(InstallationStatus::NotInstalled);
+        let lines = crate::harness::get_empty_state_message(kind, status, false);
+
+        let widget = widgets::EmptyState::new("Profiles", lines).focused(is_active);
+        frame.render_widget(widget, list_area);
         return;
     }
 
@@ -1134,7 +1167,7 @@ fn render_help_modal(frame: &mut Frame, area: Rect, view_mode: views::ViewMode) 
         Line::from("  ●         Tracked (active profile)"),
         Line::from("  +         Has config (not tracked)"),
         Line::from("  -         Binary only (no config)"),
-        Line::from("            Not installed"),
+        Line::from("  ○         Not installed"),
         Line::from(""),
         Line::from(vec![Span::styled(
             "General",
