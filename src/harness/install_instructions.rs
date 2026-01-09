@@ -106,7 +106,7 @@ fn copilot_cli_instructions() -> Vec<String> {
         ]
     } else {
         vec![
-            "- brew install copilot-cli".to_string(),
+            "- npm install -g @github/copilot".to_string(),
             "- npm install -g @github/copilot".to_string(),
         ]
     }
