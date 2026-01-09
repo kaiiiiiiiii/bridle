@@ -96,18 +96,20 @@ fn amp_instructions() -> Vec<String> {
 fn copilot_cli_instructions() -> Vec<String> {
     if cfg!(target_os = "macos") {
         vec![
-            "- brew install copilot-cli".to_string(),
             "- npm install -g @github/copilot".to_string(),
+            "- brew install copilot-cli".to_string(),
+            "- curl -fsSL https://gh.io/copilot-install | bash".to_string(),
         ]
     } else if cfg!(target_os = "windows") {
         vec![
-            "- winget install GitHub.Copilot".to_string(),
             "- npm install -g @github/copilot".to_string(),
+            "- winget install GitHub.Copilot".to_string(),
         ]
     } else {
         vec![
             "- npm install -g @github/copilot".to_string(),
-            "- npm install -g @github/copilot".to_string(),
+            "- brew install copilot-cli".to_string(),
+            "- curl -fsSL https://gh.io/copilot-install | bash".to_string(),
         ]
     }
 }
