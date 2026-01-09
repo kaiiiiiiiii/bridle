@@ -1,15 +1,62 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 fn bridle() -> Command {
     Command::cargo_bin("bridle").unwrap()
 }
 
+fn ensure_fake_opencode_installed(root: &Path) -> (PathBuf, PathBuf) {
+    use std::fs;
+
+    let xdg_config_home = root.join("xdg");
+    let opencode_config = xdg_config_home.join("opencode");
+    fs::create_dir_all(&opencode_config).unwrap();
+    fs::write(opencode_config.join("opencode.jsonc"), "{}").unwrap();
+
+    let bin_dir = root.join("bin");
+    fs::create_dir_all(&bin_dir).unwrap();
+
+    #[cfg(unix)]
+    {
+        let opencode_bin = bin_dir.join("opencode");
+        fs::write(&opencode_bin, "#!/bin/sh\nexit 0\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&opencode_bin, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(windows)]
+    {
+        fs::write(bin_dir.join("opencode.cmd"), "@echo off\nexit /b 0\n").unwrap();
+    }
+
+    (xdg_config_home, bin_dir)
+}
+
+fn set_common_env(
+    cmd: &mut Command,
+    bridle_config_dir: &Path,
+    xdg_config_home: &Path,
+    bin_dir: &Path,
+) {
+    cmd.env("BRIDLE_CONFIG_DIR", bridle_config_dir);
+    cmd.env("XDG_CONFIG_HOME", xdg_config_home);
+
+    let current_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths = std::env::split_paths(&current_path).collect::<Vec<_>>();
+    paths.insert(0, bin_dir.to_path_buf());
+    let new_path = std::env::join_paths(paths).unwrap();
+    cmd.env("PATH", new_path);
+}
+
 fn with_isolated_config() -> (Command, TempDir) {
     let temp = TempDir::new().unwrap();
+    let (xdg_config_home, bin_dir) = ensure_fake_opencode_installed(temp.path());
+
     let mut cmd = bridle();
-    cmd.env("BRIDLE_CONFIG_DIR", temp.path());
+    set_common_env(&mut cmd, temp.path(), &xdg_config_home, &bin_dir);
+
     (cmd, temp)
 }
 
@@ -49,8 +96,9 @@ fn profile_create_and_list() {
         .assert()
         .success();
 
+    let (xdg_config_home, bin_dir) = ensure_fake_opencode_installed(temp.path());
     let mut cmd2 = bridle();
-    cmd2.env("BRIDLE_CONFIG_DIR", temp.path());
+    set_common_env(&mut cmd2, temp.path(), &xdg_config_home, &bin_dir);
     cmd2.args(["profile", "list", "opencode"])
         .assert()
         .success()
@@ -73,8 +121,9 @@ fn profile_create_and_show() {
         .assert()
         .success();
 
+    let (xdg_config_home, bin_dir) = ensure_fake_opencode_installed(temp.path());
     let mut cmd2 = bridle();
-    cmd2.env("BRIDLE_CONFIG_DIR", temp.path());
+    set_common_env(&mut cmd2, temp.path(), &xdg_config_home, &bin_dir);
     cmd2.args(["profile", "show", "opencode", "show-test"])
         .assert()
         .success()
@@ -89,14 +138,15 @@ fn profile_create_and_delete() {
         .assert()
         .success();
 
+    let (xdg_config_home, bin_dir) = ensure_fake_opencode_installed(temp.path());
     let mut cmd2 = bridle();
-    cmd2.env("BRIDLE_CONFIG_DIR", temp.path());
+    set_common_env(&mut cmd2, temp.path(), &xdg_config_home, &bin_dir);
     cmd2.args(["profile", "delete", "opencode", "to-delete"])
         .assert()
         .success();
 
     let mut cmd3 = bridle();
-    cmd3.env("BRIDLE_CONFIG_DIR", temp.path());
+    set_common_env(&mut cmd3, temp.path(), &xdg_config_home, &bin_dir);
     cmd3.args(["profile", "show", "opencode", "to-delete"])
         .assert()
         .failure();
@@ -110,8 +160,9 @@ fn profile_create_duplicate_fails() {
         .assert()
         .success();
 
+    let (xdg_config_home, bin_dir) = ensure_fake_opencode_installed(temp.path());
     let mut cmd2 = bridle();
-    cmd2.env("BRIDLE_CONFIG_DIR", temp.path());
+    set_common_env(&mut cmd2, temp.path(), &xdg_config_home, &bin_dir);
     cmd2.args(["profile", "create", "opencode", "duplicate"])
         .assert()
         .failure();
@@ -133,8 +184,9 @@ fn config_set_and_get() {
         .assert()
         .success();
 
+    let (xdg_config_home, bin_dir) = ensure_fake_opencode_installed(temp.path());
     let mut cmd2 = bridle();
-    cmd2.env("BRIDLE_CONFIG_DIR", temp.path());
+    set_common_env(&mut cmd2, temp.path(), &xdg_config_home, &bin_dir);
     cmd2.args(["config", "get", "profile_marker"])
         .assert()
         .success()
@@ -160,15 +212,11 @@ fn profile_switch_preserves_unknown_files() {
 
     let temp = TempDir::new().unwrap();
     let bridle_config = temp.path().join("bridle");
-    let xdg_config = temp.path().join("xdg");
+    let (xdg_config, bin_dir) = ensure_fake_opencode_installed(temp.path());
     let opencode_config = xdg_config.join("opencode");
 
-    fs::create_dir_all(&opencode_config).unwrap();
-    fs::write(opencode_config.join("opencode.jsonc"), "{}").unwrap();
-
     let mut cmd = bridle();
-    cmd.env("BRIDLE_CONFIG_DIR", &bridle_config);
-    cmd.env("XDG_CONFIG_HOME", &xdg_config);
+    set_common_env(&mut cmd, &bridle_config, &xdg_config, &bin_dir);
     cmd.args([
         "profile",
         "create",
@@ -188,8 +236,7 @@ fn profile_switch_preserves_unknown_files() {
     .unwrap();
 
     let mut cmd2 = bridle();
-    cmd2.env("BRIDLE_CONFIG_DIR", &bridle_config);
-    cmd2.env("XDG_CONFIG_HOME", &xdg_config);
+    set_common_env(&mut cmd2, &bridle_config, &xdg_config, &bin_dir);
     cmd2.args(["profile", "switch", "opencode", "test-switch"])
         .assert()
         .success();
