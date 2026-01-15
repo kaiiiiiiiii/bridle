@@ -7,7 +7,9 @@ use color_eyre::eyre::{Result, eyre};
 use dialoguer_multiselect::MultiSelect;
 use dialoguer_multiselect::theme::ColorfulTheme;
 
+use crate::cli::profile::resolve_harness;
 use crate::config::BridleConfig;
+use crate::harness::HarnessConfig;
 use crate::install::uninstaller::uninstall_components;
 use crate::install::{ComponentType, InstallTarget};
 
@@ -16,18 +18,21 @@ pub fn run(harness: &str, profile: &str) -> Result<()> {
         return Err(eyre!("Interactive mode requires a terminal."));
     }
 
+    let harness_obj = resolve_harness(harness)?;
+    let harness_id = harness_obj.id();
+
     let profiles_dir = BridleConfig::profiles_dir()?;
     let profile_name = crate::config::ProfileName::new(profile)?;
 
-    let profile_path = profiles_dir.join(harness).join(profile);
+    let profile_path = profiles_dir.join(harness_id).join(profile);
     if !profile_path.exists() {
-        return Err(eyre!("Profile not found: {}/{}", harness, profile));
+        return Err(eyre!("Profile not found: {}/{}", harness_id, profile));
     }
 
     let components = list_installed_components(&profile_path)?;
 
     if components.is_empty() {
-        eprintln!("No components installed in {}/{}", harness, profile);
+        eprintln!("No components installed in {}/{}", harness_id, profile);
         return Ok(());
     }
 
@@ -56,11 +61,11 @@ pub fn run(harness: &str, profile: &str) -> Result<()> {
         .collect();
 
     let target = InstallTarget {
-        harness: harness.to_string(),
+        harness: harness_id.to_string(),
         profile: profile_name,
     };
 
-    eprintln!("\nUninstalling from {}/{}...", harness, profile);
+    eprintln!("\nUninstalling from {}/{}...", harness_id, profile);
 
     let report = uninstall_components(&selected_components, &target);
 
@@ -108,4 +113,39 @@ fn list_installed_components(profile_path: &Path) -> Result<Vec<(String, Compone
     }
 
     Ok(components)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn resolve_harness_canonicalizes_copilot_alias() {
+        let harness = resolve_harness("copilot").unwrap();
+        assert_eq!(harness.id(), "copilot-cli");
+    }
+
+    #[test]
+    fn resolve_harness_accepts_canonical_copilot() {
+        let harness = resolve_harness("copilot-cli").unwrap();
+        assert_eq!(harness.id(), "copilot-cli");
+    }
+
+    #[test]
+    fn profile_path_uses_canonical_harness_id() {
+        let temp = TempDir::new().unwrap();
+        let profiles_dir = temp.path();
+
+        let canonical_dir = profiles_dir.join("copilot-cli").join("test");
+        std::fs::create_dir_all(&canonical_dir).unwrap();
+
+        let harness = resolve_harness("copilot").unwrap();
+        let harness_id = harness.id();
+
+        let profile_path = profiles_dir.join(harness_id).join("test");
+
+        assert_eq!(profile_path, canonical_dir);
+        assert!(profile_path.exists());
+    }
 }

@@ -14,7 +14,7 @@ struct ProfileListEntry {
     is_active: bool,
 }
 
-fn resolve_harness(name: &str) -> Result<Harness> {
+pub(crate) fn resolve_harness(name: &str) -> Result<Harness> {
     let kind = match name {
         "claude-code" | "claude" | "cc" => HarnessKind::ClaudeCode,
         "opencode" | "oc" => HarnessKind::OpenCode,
