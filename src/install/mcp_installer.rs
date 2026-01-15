@@ -41,6 +41,7 @@ fn parse_harness_kind(id: &str) -> Option<HarnessKind> {
         "opencode" | "oc" => Some(HarnessKind::OpenCode),
         "goose" => Some(HarnessKind::Goose),
         "amp-code" | "amp" | "ampcode" => Some(HarnessKind::AmpCode),
+        "copilot-cli" | "copilot" => Some(HarnessKind::CopilotCli),
         _ => None,
     }
 }
@@ -493,5 +494,45 @@ mod tests {
 
         let warnings = check_env_var_warnings(&servers);
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn install_mcp_to_copilot_profile() {
+        let (_temp, target, profiles_dir) = setup_test_env("copilot-cli");
+        let server = create_stdio_server();
+
+        let result = install_mcp_to_dir(
+            "filesystem",
+            &server,
+            &target,
+            &InstallOptions::default(),
+            &profiles_dir,
+        );
+        assert!(result.is_ok());
+
+        if let Ok(McpInstallOutcome::Installed(success)) = result {
+            assert!(
+                success
+                    .profile_path
+                    .to_string_lossy()
+                    .contains("mcp-config.json")
+            );
+
+            let content = fs::read_to_string(&success.profile_path).unwrap();
+            let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+            assert!(
+                json["mcpServers"]["filesystem"]["command"]
+                    .as_str()
+                    .is_some()
+            );
+            assert!(
+                json["mcpServers"]["filesystem"]["args"]
+                    .as_array()
+                    .is_some()
+            );
+        } else {
+            panic!("Expected Installed outcome");
+        }
     }
 }
