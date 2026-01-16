@@ -930,14 +930,17 @@ fn render_input_popup(frame: &mut Frame, app: &App) {
     render_create_profile_input_field(frame, app, chunks[0]);
     render_create_profile_checkbox(frame, app, chunks[1]);
 
-    let mut current_idx = 3;
+    render_create_profile_input_field(frame, app, chunks[0]);
+    render_create_profile_checkbox(frame, app, chunks[1]);
 
-    if let Some(error) = &app.create_profile_error {
-        render_create_profile_error(frame, error, chunks[current_idx]);
-        current_idx += 2;
-    }
+    let tips_idx = if app.create_profile_error.is_some() {
+        render_create_profile_error(frame, &app.create_profile_error.as_ref().unwrap(), chunks[3]);
+        5
+    } else {
+        3
+    };
 
-    render_create_profile_tips(frame, app, chunks[current_idx]);
+    render_create_profile_tips(frame, app, chunks[tips_idx]);
 }
 
 fn create_profile_popup_chunks(app: &App, inner_area: Rect) -> Vec<Rect> {
